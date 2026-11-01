@@ -1,19 +1,5 @@
 import Foundation
 
-extension Decimal {
-    /// Nilai dalam satuan terkecil (sen), dibulatkan `.plain` ke 2 desimal.
-    public var minorUnits: Int64 {
-        var scaled = self * 100
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &scaled, 0, .plain)
-        return NSDecimalNumber(decimal: rounded).int64Value
-    }
-
-    public init(minorUnits: Int64) {
-        self = Decimal(minorUnits) / 100
-    }
-}
-
 /// Memformat nominal rupiah gaya `id_ID`: `Rp 1.280.402`, `Rp 1.280,50`, `-Rp 6.807.247`.
 /// Pengelompokan dibangun manual agar hasilnya deterministik (tanpa spasi non-breaking).
 public enum MoneyFormatter {

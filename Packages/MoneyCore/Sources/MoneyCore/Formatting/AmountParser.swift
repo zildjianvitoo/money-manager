@@ -4,11 +4,15 @@ public enum AmountParserError: Error, Equatable {
     case empty
     case malformed
     case divisionByZero
+    case tooLarge
 }
 
 /// Mengevaluasi ekspresi keypad (`+ - × ÷`, koma desimal). `× ÷` didahulukan, kiri ke kanan.
 /// Hasil dibulatkan ke 2 desimal.
 public enum AmountParser {
+    /// Batas nilai mutlak hasil (999.999.999.999.999) agar aman disimpan sebagai sen di `Int64`.
+    public static let maximumAmount: Decimal = 999_999_999_999_999
+
     private enum Token {
         case number(Decimal)
         case op(Character)
@@ -47,11 +51,12 @@ public enum AmountParser {
         // Tahap 2: tambah/kurang.
         var total: Decimal = 0
         for term in terms { total += term.sign * term.value }
-        guard !total.isNaN else { throw .malformed }
+        guard !total.isNaN else { throw .tooLarge }
 
         var source = total
         var rounded = Decimal()
         NSDecimalRound(&rounded, &source, 2, .plain)
+        guard !rounded.isNaN, abs(rounded) <= maximumAmount else { throw .tooLarge }
         return rounded
     }
 
@@ -62,9 +67,10 @@ public enum AmountParser {
 
         func flush() throws(AmountParserError) {
             guard !buffer.isEmpty else { return }
-            guard buffer.contains(where: \.isASCIIDigit),
-                  let value = Decimal(string: buffer.replacing(",", with: "."))
-            else { throw .malformed }
+            guard buffer.contains(where: \.isASCIIDigit) else { throw .malformed }
+            // Sintaksis sudah valid di sini, jadi gagal/NaN berarti angkanya terlalu besar.
+            guard let value = Decimal(string: buffer.replacing(",", with: ".")), !value.isNaN
+            else { throw .tooLarge }
             tokens.append(.number(value))
             buffer = ""
             sawComma = false

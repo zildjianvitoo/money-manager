@@ -47,7 +47,14 @@ struct TabBarGestureBridge: UIViewControllerRepresentable {
         }
 
         func installIfNeeded() {
+            defer { applyAccessibilityActions() }
             guard tabBar == nil, view.window != nil else { return }
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-disableTabBarGestures") {
+                Self.logger.warning("Profile tab gestures disabled by launch argument")
+                return
+            }
+            #endif
             guard let tabBarController = findTabBarController() else {
                 Self.logger.warning("UITabBarController not found; profile tab gestures disabled")
                 return
@@ -104,7 +111,8 @@ struct TabBarGestureBridge: UIViewControllerRepresentable {
                 if let tabBarController = controller as? UITabBarController { return tabBarController }
                 current = controller.parent
             }
-            return view.window?.rootViewController.flatMap(Self.firstTabBarController(in:))
+            guard let root = view.window?.rootViewController else { return nil }
+            return Self.firstTabBarController(in: root)
         }
 
         private static func firstTabBarController(in controller: UIViewController) -> UITabBarController? {
@@ -137,6 +145,26 @@ struct TabBarGestureBridge: UIViewControllerRepresentable {
             shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
         ) -> Bool {
             true
+        }
+
+        // MARK: VoiceOver
+
+        /// SwiftUI's accessibility modifiers on a `Tab` label don't reach the
+        /// UIKit tab button, so the gesture actions are exposed here as custom
+        /// actions on that button.
+        private func applyAccessibilityActions() {
+            guard let bar = tabBar, let button = Self.view(in: bar, withAccessibilityLabel: profileTabLabel) else { return }
+            button.accessibilityHint = "Ketuk dua kali cepat untuk beralih ke profil terakhir"
+            button.accessibilityCustomActions = [
+                UIAccessibilityCustomAction(name: "Ganti profil") { [weak self] _ in
+                    self?.onLongPress()
+                    return true
+                },
+                UIAccessibilityCustomAction(name: "Profil terakhir") { [weak self] _ in
+                    self?.onDoubleTap()
+                    return true
+                },
+            ]
         }
 
         // MARK: Locating the profile item

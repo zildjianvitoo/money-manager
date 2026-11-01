@@ -39,7 +39,9 @@ public struct TransactionDraft: Equatable {
 }
 
 public enum TransactionValidationError: Error, Equatable {
-    case amountNotPositive, missingCategory, missingAsset, missingTargetAsset, sameAsset, negativeFee
+    case amountNotPositive, amountTooLarge, missingCategory, missingAsset, missingTargetAsset, sameAsset, negativeFee
+    /// Transaksi yang diberikan milik profil lain (update/delete/duplicate).
+    case foreignTransaction
 }
 
 /// Membuat, mengubah, menghapus, dan menduplikasi transaksi milik satu profil.
@@ -55,7 +57,8 @@ public struct TransactionService {
     }
 
     /// Satu-satunya sumber aturan validasi.
-    /// Urutan: amount, fee, lalu aturan khusus tipe. Draft `.adjustment` ditolak (hanya dibuat oleh AssetService).
+    /// Urutan: amountTooLarge, amountNotPositive (termasuk nominal di bawah sen dan `.adjustment`, yang hanya
+    /// dibuat oleh AssetService), lalu aturan khusus tipe. Fee hanya divalidasi untuk transfer.
     public func validate(_ d: TransactionDraft) throws(TransactionValidationError) {
         _ = try resolve(d)
     }
@@ -74,6 +77,7 @@ public struct TransactionService {
     }
 
     public func update(_ tx: MoneyTransaction, with d: TransactionDraft) throws {
+        try requireOwned(tx)
         let resolved = try resolve(d)
         apply(d, resolved, to: tx)
         tx.updatedAt = .now
@@ -81,6 +85,7 @@ public struct TransactionService {
     }
 
     public func delete(_ tx: MoneyTransaction) throws {
+        try requireOwned(tx)
         context.delete(tx)
         try context.save()
     }
@@ -89,8 +94,9 @@ public struct TransactionService {
     /// Tidak menyalin kaitan recurring/impor.
     @discardableResult
     public func duplicate(_ tx: MoneyTransaction, on date: Date) throws -> MoneyTransaction {
+        try requireOwned(tx)
         let now = Date.now
-        let copy = MoneyTransaction(profileID: tx.profileID, type: tx.type, amount: tx.amount, date: date)
+        let copy = MoneyTransaction(profileID: profileID, type: tx.type, amount: tx.amount, date: date)
         copy.fee = tx.fee
         copy.category = tx.category
         copy.asset = tx.asset
@@ -106,6 +112,13 @@ public struct TransactionService {
 
     // MARK: - Private
 
+    /// Batas nominal yang sama dengan AmountParser.
+    private static let maxAmount = Decimal(string: "999999999999999")!
+
+    private func requireOwned(_ tx: MoneyTransaction) throws {
+        guard tx.profileID == profileID else { throw TransactionValidationError.foreignTransaction }
+    }
+
     private struct Resolved {
         var category: MoneyCategory?
         var asset: AssetAccount?
@@ -114,8 +127,10 @@ public struct TransactionService {
 
     /// Memvalidasi draft dan me-resolve relasinya tanpa mengubah apa pun.
     private func resolve(_ d: TransactionDraft) throws(TransactionValidationError) -> Resolved {
-        guard d.type != .adjustment, d.amount > 0 else { throw .amountNotPositive }
-        guard d.fee >= 0 else { throw .negativeFee }
+        let limit = Self.maxAmount
+        guard abs(d.amount) <= limit, abs(d.fee) <= limit else { throw .amountTooLarge }
+        // `minorUnits` trap pada NaN; batas di atas menjamin tidak ada trap karena ukuran.
+        guard d.type != .adjustment, !d.amount.isNaN, d.amount.minorUnits > 0 else { throw .amountNotPositive }
 
         switch d.type {
         case .income, .expense:
@@ -123,11 +138,13 @@ public struct TransactionService {
             guard let asset = fetchAsset(d.assetID) else { throw .missingAsset }
             return Resolved(category: category, asset: asset, toAsset: nil)
         case .transfer:
+            guard d.fee >= 0 else { throw .negativeFee }
             guard let asset = fetchAsset(d.assetID) else { throw .missingAsset }
             guard let toAsset = fetchAsset(d.toAssetID) else { throw .missingTargetAsset }
             guard asset.id != toAsset.id else { throw .sameAsset }
             return Resolved(category: nil, asset: asset, toAsset: toAsset)
         case .adjustment:
+            // Tak terjangkau: `.adjustment` sudah ditolak di atas. Dipertahankan agar switch tetap exhaustive.
             throw .amountNotPositive
         }
     }
@@ -144,6 +161,8 @@ public struct TransactionService {
         tx.detail = d.detail
     }
 
+    // Fetch memakai `try?` dengan sengaja: validate memakai typed throws, jadi galat store
+    // dipetakan menjadi missing* (ID dianggap tidak ada) alih-alih galat lain.
     private func fetchCategory(_ id: UUID?) -> MoneyCategory? {
         guard let id else { return nil }
         let pid = profileID

@@ -68,6 +68,7 @@ struct TransactionServiceTests {
         #expect(tx.asset?.id == f.cash.id)
         #expect(tx.toAsset == nil)
         #expect(tx.note == "Makan siang")
+        #expect(tx.createdAt == tx.updatedAt)
         #expect(try allTransactions(f).count == 1)
     }
 
@@ -142,6 +143,91 @@ struct TransactionServiceTests {
         d.amount = 0
         d.fee = -1
         #expect(throws: TransactionValidationError.amountNotPositive) { try f.service.validate(d) }
+    }
+
+    @Test func expenseIgnoresNegativeFee() throws {
+        let f = try makeFixture()
+        var d = expenseDraft(f)
+        d.fee = -1
+
+        let tx = try f.service.create(d)
+
+        #expect(tx.fee == 0)
+    }
+
+    @Test func rejectsSubCentAmount() throws {
+        let f = try makeFixture()
+        #expect(throws: TransactionValidationError.amountNotPositive) {
+            try f.service.validate(expenseDraft(f, amount: Decimal(string: "0.004")!))
+        }
+        #expect(try allTransactions(f).isEmpty)
+    }
+
+    @Test func rejectsTooLargeAmountAndFee() throws {
+        let f = try makeFixture()
+        let tooLarge = Decimal(string: "1000000000000000")!
+        #expect(throws: TransactionValidationError.amountTooLarge) {
+            try f.service.validate(expenseDraft(f, amount: tooLarge))
+        }
+        var fee = transferDraft(f)
+        fee.fee = tooLarge
+        #expect(throws: TransactionValidationError.amountTooLarge) { try f.service.validate(fee) }
+        var negative = transferDraft(f)
+        negative.amount = -tooLarge
+        #expect(throws: TransactionValidationError.amountTooLarge) { try f.service.validate(negative) }
+        let maxAmount = Decimal(string: "999999999999999")!
+        #expect(throws: Never.self) { try f.service.validate(expenseDraft(f, amount: maxAmount)) }
+    }
+
+    private func foreignTransaction(_ f: Fixture) throws -> MoneyTransaction {
+        let otherProfile = UUID()
+        let category = MoneyCategory(profileID: otherProfile, name: "Asing", kind: .expense)
+        let asset = AssetAccount(profileID: otherProfile, name: "Asing", group: .cash)
+        f.context.insert(category)
+        f.context.insert(asset)
+        try f.context.save()
+        let other = TransactionService(context: f.context, profileID: otherProfile)
+        var d = TransactionDraft(type: .expense, date: Date(timeIntervalSince1970: 1_000_000))
+        d.amount = 10_000
+        d.categoryID = category.id
+        d.assetID = asset.id
+        return try other.create(d)
+    }
+
+    @Test func updateRejectsForeignTransaction() throws {
+        let f = try makeFixture()
+        let foreign = try foreignTransaction(f)
+        let past = Date(timeIntervalSince1970: 0)
+        foreign.updatedAt = past
+
+        #expect(throws: TransactionValidationError.foreignTransaction) {
+            try f.service.update(foreign, with: expenseDraft(f, amount: 1))
+        }
+
+        #expect(foreign.amount == 10_000)
+        #expect(foreign.profileID != f.profileID)
+        #expect(foreign.category?.profileID != f.profileID)
+        #expect(foreign.updatedAt == past)
+    }
+
+    @Test func deleteRejectsForeignTransaction() throws {
+        let f = try makeFixture()
+        let foreign = try foreignTransaction(f)
+
+        #expect(throws: TransactionValidationError.foreignTransaction) { try f.service.delete(foreign) }
+
+        #expect(try allTransactions(f).count == 1)
+    }
+
+    @Test func duplicateRejectsForeignTransaction() throws {
+        let f = try makeFixture()
+        let foreign = try foreignTransaction(f)
+
+        #expect(throws: TransactionValidationError.foreignTransaction) {
+            try f.service.duplicate(foreign, on: .now)
+        }
+
+        #expect(try allTransactions(f).count == 1)
     }
 
     @Test func rejectsForeignProfileIDs() throws {
@@ -220,8 +306,9 @@ struct TransactionServiceTests {
     @Test func updateChangesFieldsAndTimestamp() throws {
         let f = try makeFixture()
         let tx = try f.service.create(expenseDraft(f))
-        let before = tx.updatedAt
-        tx.updatedAt = Date(timeIntervalSince1970: 0)
+        let createdAt = tx.createdAt
+        let past = Date(timeIntervalSince1970: 0)
+        tx.updatedAt = past
         let otherCategory = MoneyCategory(profileID: f.profileID, name: "Transport", kind: .expense)
         f.context.insert(otherCategory)
 
@@ -236,8 +323,8 @@ struct TransactionServiceTests {
         #expect(tx.category?.id == otherCategory.id)
         #expect(tx.asset?.id == f.bank.id)
         #expect(tx.note == "Baru")
-        #expect(tx.updatedAt > Date(timeIntervalSince1970: 0))
-        #expect(tx.updatedAt >= before)
+        #expect(tx.updatedAt > past)
+        #expect(tx.createdAt == createdAt)
     }
 
     @Test func updateToTransferClearsCategoryAndKeepsFee() throws {

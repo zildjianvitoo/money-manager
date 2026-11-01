@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MoneyCore
 
 @main
 struct money_managerApp: App {

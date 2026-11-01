@@ -44,7 +44,7 @@
 - Profil pertama bernama **"Pribadi"**. Profil baru diisi kategori default PRD F6 dan satu aset **"Tunai"** (grup Tunai).
 - Target app memakai `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. Service di `MoneyCore` yang memakai `ModelContext` ditandai `@MainActor`.
 - Perintah test package: `swift test --package-path Packages/MoneyCore`.
-- Perintah build app: `xcodebuild -project money-manager.xcodeproj -scheme money-manager -destination 'platform=iOS Simulator,id=EF1F29F3-1005-4A09-B5AF-BF6C0F16599B' (iPhone 17 Pro, iOS 26.3.1) build`.
+- Perintah build app: `xcodebuild -project money-manager.xcodeproj -scheme money-manager -destination 'platform=iOS Simulator,id=EF1F29F3-1005-4A09-B5AF-BF6C0F16599B' build` (iPhone 17 Pro, iOS 26.3.1).
 
 ## Review Focus
 

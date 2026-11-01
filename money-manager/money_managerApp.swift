@@ -12,7 +12,7 @@ import MoneyCore
 struct money_managerApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
     }
 }

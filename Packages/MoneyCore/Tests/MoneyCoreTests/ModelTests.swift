@@ -20,8 +20,8 @@ import SwiftData
     let container = try MoneySchema.makeContainer(inMemory: true)
     let ctx = container.mainContext
     let p = UUID()
-    let food = Category(profileID: p, name: "Makanan", kind: .expense)
-    let lunch = Category(profileID: p, name: "Makan siang", kind: .expense, parent: food)
+    let food = MoneyCategory(profileID: p, name: "Makanan", kind: .expense)
+    let lunch = MoneyCategory(profileID: p, name: "Makan siang", kind: .expense, parent: food)
     ctx.insert(food); ctx.insert(lunch); try ctx.save()
     #expect(food.children?.count == 1)
 }
@@ -45,7 +45,7 @@ import SwiftData
     #expect(acc.group == .bank)
     #expect(acc.initialBalanceMinor == 100_000)
     #expect(acc.initialBalance == 1000)
-    let cat = Category(profileID: UUID(), name: "Gaji", kind: .income)
+    let cat = MoneyCategory(profileID: UUID(), name: "Gaji", kind: .income)
     #expect(cat.kindRaw == "income")
     #expect(cat.kind == .income)
     #expect(AssetGroup.eWallet.displayName == "E-Wallet")

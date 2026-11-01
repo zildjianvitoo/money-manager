@@ -14,7 +14,7 @@ public final class MoneyTransaction {
     public var amountMinor: Int64 = 0
     public var feeMinor: Int64 = 0
     public var date: Date = Date.now
-    public var category: Category?
+    public var category: MoneyCategory?
     public var asset: AssetAccount?
     public var toAsset: AssetAccount?
     public var note: String = ""

@@ -69,7 +69,7 @@ public struct ProfileService {
         for asset in try context.fetch(FetchDescriptor<AssetAccount>(predicate: #Predicate { $0.profileID == id })) {
             context.delete(asset)
         }
-        for category in try context.fetch(FetchDescriptor<Category>(predicate: #Predicate { $0.profileID == id })) {
+        for category in try context.fetch(FetchDescriptor<MoneyCategory>(predicate: #Predicate { $0.profileID == id })) {
             context.delete(category)
         }
         context.delete(target)
@@ -116,12 +116,12 @@ public struct ProfileService {
 
     private func seedDefaultCategories(for profileID: UUID) {
         for (index, item) in DefaultCatalog.expense.enumerated() {
-            let category = Category(profileID: profileID, name: item.name, kind: .expense, emoji: item.emoji)
+            let category = MoneyCategory(profileID: profileID, name: item.name, kind: .expense, emoji: item.emoji)
             category.sortOrder = index
             context.insert(category)
         }
         for (index, item) in DefaultCatalog.income.enumerated() {
-            let category = Category(profileID: profileID, name: item.name, kind: .income, emoji: item.emoji)
+            let category = MoneyCategory(profileID: profileID, name: item.name, kind: .income, emoji: item.emoji)
             category.sortOrder = index
             context.insert(category)
         }
@@ -129,10 +129,10 @@ public struct ProfileService {
 
     private func copyCategories(from sourceID: UUID, to targetID: UUID) throws {
         let originals = try context.fetch(
-            FetchDescriptor<Category>(predicate: #Predicate { $0.profileID == sourceID }))
-        var copies: [UUID: Category] = [:]
+            FetchDescriptor<MoneyCategory>(predicate: #Predicate { $0.profileID == sourceID }))
+        var copies: [UUID: MoneyCategory] = [:]
         for original in originals {
-            let copy = Category(profileID: targetID, name: original.name, kind: original.kind, emoji: original.emoji)
+            let copy = MoneyCategory(profileID: targetID, name: original.name, kind: original.kind, emoji: original.emoji)
             copy.isHidden = original.isHidden
             copy.sortOrder = original.sortOrder
             context.insert(copy)

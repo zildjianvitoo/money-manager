@@ -2,7 +2,6 @@ import Foundation
 import SwiftData
 import Testing
 @testable import MoneyCore
-import class MoneyCore.Category
 
 @MainActor
 struct ProfileServiceTests {
@@ -10,8 +9,8 @@ struct ProfileServiceTests {
         ProfileStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
     }
 
-    private func categories(_ ctx: ModelContext, _ id: UUID, kind: CategoryKind? = nil) throws -> [Category] {
-        let all = try ctx.fetch(FetchDescriptor<Category>(predicate: #Predicate { $0.profileID == id }))
+    private func categories(_ ctx: ModelContext, _ id: UUID, kind: CategoryKind? = nil) throws -> [MoneyCategory] {
+        let all = try ctx.fetch(FetchDescriptor<MoneyCategory>(predicate: #Predicate { $0.profileID == id }))
         guard let kind else { return all }
         return all.filter { $0.kind == kind && $0.parent == nil }
     }
@@ -78,7 +77,7 @@ struct ProfileServiceTests {
         let service = ProfileService(context: ctx)
         let a = try service.bootstrap(store: makeStore())
         let food = try #require(try categories(ctx, a.id, kind: .expense).first { $0.name == "Makanan" })
-        let lunch = Category(profileID: a.id, name: "Makan siang", kind: .expense, emoji: "🥗", parent: food)
+        let lunch = MoneyCategory(profileID: a.id, name: "Makan siang", kind: .expense, emoji: "🥗", parent: food)
         lunch.sortOrder = 3
         ctx.insert(lunch)
         let hiddenSource = try #require(try categories(ctx, a.id, kind: .expense).first { $0.name == "Pakaian" })
@@ -155,7 +154,7 @@ struct ProfileServiceTests {
         let a = try service.bootstrap(store: store)
         let b = try service.createProfile(name: "B", emoji: "🅱️", colorHex: "#000000", copyCategoriesFrom: nil)
         let bFood = try #require(try categories(ctx, b.id, kind: .expense).first)
-        ctx.insert(Category(profileID: b.id, name: "Sub", kind: .expense, parent: bFood))
+        ctx.insert(MoneyCategory(profileID: b.id, name: "Sub", kind: .expense, parent: bFood))
         let bAsset = try #require(try assets(ctx, b.id).first)
         let tx = MoneyTransaction(profileID: b.id, type: .expense, amount: 500, date: .now)
         tx.asset = bAsset

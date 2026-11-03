@@ -89,7 +89,7 @@ private struct DayHeader: View {
     }
 }
 
-private struct TransactionRow: View {
+struct TransactionRow: View {
     let transaction: MoneyTransaction
 
     private var topCategory: MoneyCategory? {

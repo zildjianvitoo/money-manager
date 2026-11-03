@@ -35,7 +35,7 @@ struct RootView: View {
                 withGestureBridge(TransactionListView())
             }
             Tab("Statistik", systemImage: "chart.pie", value: AppTab.statistics) {
-                withGestureBridge(placeholder("Statistik", systemImage: "chart.pie"))
+                withGestureBridge(StatisticsView())
             }
             Tab("Aset", systemImage: "building.columns", value: AppTab.assets) {
                 withGestureBridge(AssetListView())

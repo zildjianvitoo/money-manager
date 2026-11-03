@@ -7,6 +7,11 @@ public enum TransactionQueries {
         calendar.dateInterval(of: .month, for: date) ?? DateInterval(start: date, duration: 0)
     }
 
+    /// Interval tahun yang memuat `date`: [1 Jan, 1 Jan tahun berikutnya). Akhir bersifat eksklusif.
+    public static func yearInterval(containing date: Date, calendar: Calendar) -> DateInterval {
+        calendar.dateInterval(of: .year, for: date) ?? DateInterval(start: date, duration: 0)
+    }
+
     /// Transaksi satu profil dalam interval (`start <= date < end`), terbaru di atas.
     public static func descriptor(profileID: UUID, interval: DateInterval) -> FetchDescriptor<MoneyTransaction> {
         let start = interval.start

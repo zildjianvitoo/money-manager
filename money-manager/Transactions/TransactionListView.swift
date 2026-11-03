@@ -31,6 +31,8 @@ struct TransactionListView: View {
     @State private var month = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var mode: TransactionListMode = .daily
     @State private var formRoute: TransactionFormRoute?
+    /// Day picked in the calendar view; owned here so the + button can use it.
+    @State private var selectedDay: Date?
 
     private var activeProfile: Profile? {
         profiles.first { $0.id == store.activeProfileID }
@@ -40,12 +42,17 @@ struct TransactionListView: View {
         NavigationStack {
             Group {
                 if let profile = activeProfile {
-                    MonthTransactionsView(
-                        profile: profile,
-                        month: $month,
-                        mode: $mode,
-                        onOpen: { formRoute = $0 }
-                    )
+                    if mode == .monthly {
+                        YearTransactionsView(profile: profile, month: $month, mode: $mode)
+                    } else {
+                        MonthTransactionsView(
+                            profile: profile,
+                            month: $month,
+                            mode: $mode,
+                            selectedDay: $selectedDay,
+                            onOpen: { formRoute = $0 }
+                        )
+                    }
                 } else {
                     ProgressView()
                 }
@@ -53,6 +60,7 @@ struct TransactionListView: View {
             .navigationTitle("Transaksi")
             // Large title in the bar row itself: `.large` adds an empty bar above it, since this screen has no toolbar items.
             .toolbarTitleDisplayMode(.inlineLarge)
+            .onChange(of: month) { selectedDay = nil }
             .overlay(alignment: .bottomTrailing) {
                 if activeProfile != nil {
                     addButton
@@ -82,9 +90,13 @@ struct TransactionListView: View {
         .padding(.bottom, 16)
     }
 
-    /// Now when viewing the current month, otherwise noon on the 1st of the viewed month.
+    /// The selected calendar day (noon, or now if today); else now in the current month, otherwise noon on the 1st of the viewed month.
     private var defaultDate: Date {
         let calendar = Calendar.current
+        if mode == .calendar, let day = selectedDay {
+            if calendar.isDateInToday(day) { return .now }
+            return calendar.date(byAdding: .hour, value: 12, to: calendar.startOfDay(for: day)) ?? day
+        }
         if calendar.isDate(month, equalTo: .now, toGranularity: .month) { return .now }
         return calendar.date(byAdding: .hour, value: 12, to: month) ?? month
     }
@@ -95,6 +107,7 @@ private struct MonthTransactionsView: View {
     let profile: Profile
     @Binding var month: Date
     @Binding var mode: TransactionListMode
+    @Binding var selectedDay: Date?
     let onOpen: (TransactionFormRoute) -> Void
 
     @Environment(\.modelContext) private var context
@@ -102,10 +115,11 @@ private struct MonthTransactionsView: View {
     @Query private var transactions: [MoneyTransaction]
     @State private var pendingDelete: MoneyTransaction?
 
-    init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>, onOpen: @escaping (TransactionFormRoute) -> Void) {
+    init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>, selectedDay: Binding<Date?>, onOpen: @escaping (TransactionFormRoute) -> Void) {
         self.profile = profile
         _month = month
         _mode = mode
+        _selectedDay = selectedDay
         self.onOpen = onOpen
         let interval = TransactionQueries.monthInterval(containing: month.wrappedValue, calendar: .current)
         _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
@@ -140,8 +154,11 @@ private struct MonthTransactionsView: View {
             } else {
                 dailyList
             }
-        case .calendar, .monthly:
-            ContentUnavailableView("Segera hadir", systemImage: "calendar", description: Text("Tampilan \(mode.rawValue) sedang dibuat."))
+        case .calendar:
+            calendarList
+        case .monthly:
+            // Handled by `YearTransactionsView`.
+            EmptyView()
         }
     }
 
@@ -161,6 +178,43 @@ private struct MonthTransactionsView: View {
         .contentMargins(.bottom, 72, for: .scrollContent)
     }
 
+    private var calendarList: some View {
+        let calendar = Calendar.current
+        let selected = selectedDay.flatMap { day in
+            TransactionSummary.daySections(transactions, calendar: calendar).first { $0.id == day }
+        }
+        return List {
+            Section {
+                CalendarMonthView(
+                    month: month,
+                    dayTotals: TransactionSummary.dayTotals(transactions, calendar: calendar),
+                    selectedDay: $selectedDay
+                )
+                .simultaneousGesture(monthSwipe)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+            if let selected {
+                DailySectionView(
+                    section: selected,
+                    onOpen: { onOpen(.edit($0)) },
+                    onDelete: { pendingDelete = $0 },
+                    onDuplicate: duplicate
+                )
+            } else if let day = selectedDay {
+                Section {
+                    Text("Tidak ada transaksi")
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(day, format: .dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "id_ID")))
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .contentMargins(.bottom, 72, for: .scrollContent)
+    }
+
     private var emptyState: some View {
         ContentUnavailableView {
             Label("Belum ada transaksi", systemImage: "tray")
@@ -175,61 +229,20 @@ private struct MonthTransactionsView: View {
     // MARK: Header
 
     private var header: some View {
-        let summary = TransactionSummary.month(transactions)
-        return VStack(spacing: 12) {
-            monthNavigator
-            HStack(alignment: .top) {
-                SummaryColumn(title: "Pendapatan", amount: summary.income, color: .blue)
-                SummaryColumn(title: "Pengeluaran", amount: summary.expense, color: .red)
-                SummaryColumn(title: "Total", amount: summary.total, color: .primary)
-            }
-            Picker("Tampilan", selection: $mode) {
-                ForEach(TransactionListMode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        // Pinned bar: capped like system bars so accessibility sizes don't fill the screen; the list still scales.
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        // Opaque so rows scroll beneath it; `.safeAreaBar` blurred the large title.
-        .background(Color(.systemGroupedBackground), ignoresSafeAreaEdges: [])
-        .contentShape(Rectangle())
-        // High priority: the inset sits on the list's scroll view, whose pan would win otherwise.
-        .highPriorityGesture(monthSwipe)
+        TransactionListHeader(
+            title: MonthFormat.string(month),
+            previousLabel: "Bulan sebelumnya",
+            nextLabel: "Bulan berikutnya",
+            summary: TransactionSummary.month(transactions),
+            mode: $mode,
+            onShift: shiftMonth
+        )
     }
 
-    private var monthNavigator: some View {
-        // Chevrons pinned to the header edges; each one's button fills the space up to the month, so the whole side is tappable.
-        HStack(spacing: 8) {
-            Button { shiftMonth(-1) } label: {
-                Image(systemName: "chevron.left")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Bulan sebelumnya")
-            Text(MonthFormat.string(month))
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-            Button { shiftMonth(1) } label: {
-                Image(systemName: "chevron.right")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Bulan berikutnya")
-        }
-    }
-
-    /// Horizontal swipe on the header or the empty state changes month.
+    /// Horizontal swipe on the header, the calendar grid or the empty state changes month.
     /// The list itself keeps horizontal swipes for the row actions.
     private var monthSwipe: some Gesture {
-        DragGesture(minimumDistance: 30)
-            .onEnded { value in
-                let dx = value.translation.width
-                guard abs(dx) > 60, abs(dx) > abs(value.translation.height) * 2 else { return }
-                shiftMonth(dx < 0 ? 1 : -1)
-            }
+        PeriodSwipe.gesture(onShift: shiftMonth)
     }
 
     private func shiftMonth(_ delta: Int) {
@@ -265,6 +278,125 @@ private struct MonthTransactionsView: View {
         } catch {
             assertionFailure("Duplikat transaksi gagal: \(error)")
         }
+    }
+}
+
+/// Pinned header shared by the month and year screens: navigator, summary columns and the mode picker.
+private struct TransactionListHeader: View {
+    let title: String
+    let previousLabel: String
+    let nextLabel: String
+    let summary: MonthSummary
+    @Binding var mode: TransactionListMode
+    let onShift: (Int) -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            navigator
+            HStack(alignment: .top) {
+                SummaryColumn(title: "Pendapatan", amount: summary.income, color: .blue)
+                SummaryColumn(title: "Pengeluaran", amount: summary.expense, color: .red)
+                SummaryColumn(title: "Total", amount: summary.total, color: .primary)
+            }
+            Picker("Tampilan", selection: $mode) {
+                ForEach(TransactionListMode.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        // Pinned bar: capped like system bars so accessibility sizes don't fill the screen; the list still scales.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        // Opaque so rows scroll beneath it; `.safeAreaBar` blurred the large title.
+        .background(Color(.systemGroupedBackground), ignoresSafeAreaEdges: [])
+        .contentShape(Rectangle())
+        // High priority: the inset sits on the list's scroll view, whose pan would win otherwise.
+        .highPriorityGesture(PeriodSwipe.gesture(onShift: onShift))
+    }
+
+    private var navigator: some View {
+        // Chevrons pinned to the header edges; each one's button fills the space up to the title, so the whole side is tappable.
+        HStack(spacing: 8) {
+            Button { onShift(-1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(previousLabel)
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Button { onShift(1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(nextLabel)
+        }
+    }
+}
+
+private enum PeriodSwipe {
+    static func gesture(onShift: @escaping (Int) -> Void) -> some Gesture {
+        DragGesture(minimumDistance: 30)
+            .onEnded { value in
+                let dx = value.translation.width
+                guard abs(dx) > 60, abs(dx) > abs(value.translation.height) * 2 else { return }
+                onShift(dx < 0 ? 1 : -1)
+            }
+    }
+}
+
+/// "Bulanan": owns the `@Query` for one profile and year; 12 month rows, newest first.
+private struct YearTransactionsView: View {
+    let profile: Profile
+    @Binding var month: Date
+    @Binding var mode: TransactionListMode
+
+    @Query private var transactions: [MoneyTransaction]
+
+    init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>) {
+        self.profile = profile
+        _month = month
+        _mode = mode
+        let interval = TransactionQueries.yearInterval(containing: month.wrappedValue, calendar: .current)
+        _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
+    }
+
+    var body: some View {
+        MonthlyYearView(rows: rows, onSelect: select)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                TransactionListHeader(
+                    title: String(Calendar.current.component(.year, from: month)),
+                    previousLabel: "Tahun sebelumnya",
+                    nextLabel: "Tahun berikutnya",
+                    summary: TransactionSummary.month(transactions),
+                    mode: $mode,
+                    onShift: shiftYear
+                )
+            }
+    }
+
+    /// Newest month first; months after the current one are hidden in the current year.
+    private var rows: [MonthRow] {
+        let calendar = Calendar.current
+        let all = TransactionSummary.monthRows(transactions, year: month, calendar: calendar)
+        let thisMonth = calendar.dateInterval(of: .month, for: .now)?.start ?? .now
+        let isCurrentYear = calendar.isDate(month, equalTo: .now, toGranularity: .year)
+        return all
+            .filter { !isCurrentYear || $0.id <= thisMonth }
+            .sorted { $0.id > $1.id }
+    }
+
+    private func select(_ row: MonthRow) {
+        month = row.id
+        mode = .daily
+    }
+
+    private func shiftYear(_ delta: Int) {
+        guard let next = Calendar.current.date(byAdding: .year, value: delta, to: month) else { return }
+        withAnimation { month = next }
     }
 }
 

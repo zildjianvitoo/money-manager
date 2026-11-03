@@ -200,18 +200,20 @@ private struct MonthTransactionsView: View {
     }
 
     private var monthNavigator: some View {
-        HStack(spacing: 16) {
+        // Chevrons pinned to the header edges, in line with the segmented control below.
+        HStack(spacing: 0) {
             Button { shiftMonth(-1) } label: {
-                Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                Image(systemName: "chevron.left").frame(width: 44, height: 44, alignment: .leading)
             }
             .accessibilityLabel("Bulan sebelumnya")
+            Spacer(minLength: 8)
             Text(MonthFormat.string(month))
                 .font(.title3.weight(.semibold))
-                .frame(minWidth: 120)
                 .monospacedDigit()
                 .contentTransition(.numericText())
+            Spacer(minLength: 8)
             Button { shiftMonth(1) } label: {
-                Image(systemName: "chevron.right").frame(width: 44, height: 44)
+                Image(systemName: "chevron.right").frame(width: 44, height: 44, alignment: .trailing)
             }
             .accessibilityLabel("Bulan berikutnya")
         }

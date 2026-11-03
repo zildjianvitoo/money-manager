@@ -12,7 +12,7 @@ struct MoreView: View {
     @Environment(\.modelContext) private var context
     @Environment(ProfileStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
-    @State private var isConfirmingSeedImport = false
+    @State private var pendingSeed: (profile: String, url: URL)?
     @State private var seedImportError: String?
     #endif
 
@@ -58,13 +58,16 @@ struct MoreView: View {
                     comingSoonRow("Keamanan", systemImage: "faceid")
                 }
                 #if DEBUG
-                if BusinessSeedImporter.isAvailable {
+                let seeds = SeedImporter.available
+                if !seeds.isEmpty {
                     Section {
-                        Button("Impor data awal Bisnis", systemImage: "square.and.arrow.down") {
-                            isConfirmingSeedImport = true
+                        ForEach(seeds, id: \.url) { seed in
+                            Button("Impor data awal \(seed.profile)", systemImage: "square.and.arrow.down") {
+                                pendingSeed = seed
+                            }
                         }
                     } footer: {
-                        Text("Khusus build debug. Memasukkan riwayat dari Money Manager ke profil Bisnis, sekali saja.")
+                        Text("Khusus build debug. Memasukkan riwayat dari Money Manager, sekali saja per profil.")
                     }
                 }
                 #endif
@@ -78,10 +81,15 @@ struct MoreView: View {
             }
             .navigationTitle("Lainnya")
             #if DEBUG
-            .confirmationDialog("Impor data awal Bisnis?", isPresented: $isConfirmingSeedImport, titleVisibility: .visible) {
-                Button("Impor") { importBusinessSeed() }
-            } message: {
-                Text("Profil Bisnis dibuat kalau belum ada, lalu diisi aset dan transaksi dari backup.")
+            .confirmationDialog(
+                "Impor data awal \(pendingSeed?.profile ?? "")?",
+                isPresented: Binding(get: { pendingSeed != nil }, set: { if !$0 { pendingSeed = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingSeed
+            ) { seed in
+                Button("Impor") { importSeed(seed.url) }
+            } message: { seed in
+                Text("Profil \(seed.profile) dibuat kalau belum ada, lalu diisi aset, kategori, dan transaksi dari backup.")
             }
             .alert("Impor gagal", isPresented: Binding(get: { seedImportError != nil }, set: { if !$0 { seedImportError = nil } })) {
                 Button("OK") { seedImportError = nil }
@@ -93,9 +101,9 @@ struct MoreView: View {
     }
 
     #if DEBUG
-    private func importBusinessSeed() {
+    private func importSeed(_ url: URL) {
         do {
-            let result = try BusinessSeedImporter.run(context: context)
+            let result = try SeedImporter.run(url, context: context)
             store.switchTo(result.profile.id)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             toastCenter.show("\(result.count) transaksi masuk ke **\(result.profile.name)**")

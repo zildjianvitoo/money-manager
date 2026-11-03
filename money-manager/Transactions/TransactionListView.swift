@@ -31,6 +31,8 @@ struct TransactionListView: View {
     @State private var month = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var mode: TransactionListMode = .daily
     @State private var formRoute: TransactionFormRoute?
+    /// Day picked in the calendar view; owned here so the + button can use it.
+    @State private var selectedDay: Date?
 
     private var activeProfile: Profile? {
         profiles.first { $0.id == store.activeProfileID }
@@ -44,6 +46,7 @@ struct TransactionListView: View {
                         profile: profile,
                         month: $month,
                         mode: $mode,
+                        selectedDay: $selectedDay,
                         onOpen: { formRoute = $0 }
                     )
                 } else {
@@ -53,6 +56,7 @@ struct TransactionListView: View {
             .navigationTitle("Transaksi")
             // Large title in the bar row itself: `.large` adds an empty bar above it, since this screen has no toolbar items.
             .toolbarTitleDisplayMode(.inlineLarge)
+            .onChange(of: month) { selectedDay = nil }
             .overlay(alignment: .bottomTrailing) {
                 if activeProfile != nil {
                     addButton
@@ -82,9 +86,13 @@ struct TransactionListView: View {
         .padding(.bottom, 16)
     }
 
-    /// Now when viewing the current month, otherwise noon on the 1st of the viewed month.
+    /// The selected calendar day (noon, or now if today); else now in the current month, otherwise noon on the 1st of the viewed month.
     private var defaultDate: Date {
         let calendar = Calendar.current
+        if mode == .calendar, let day = selectedDay {
+            if calendar.isDateInToday(day) { return .now }
+            return calendar.date(byAdding: .hour, value: 12, to: calendar.startOfDay(for: day)) ?? day
+        }
         if calendar.isDate(month, equalTo: .now, toGranularity: .month) { return .now }
         return calendar.date(byAdding: .hour, value: 12, to: month) ?? month
     }
@@ -95,6 +103,7 @@ private struct MonthTransactionsView: View {
     let profile: Profile
     @Binding var month: Date
     @Binding var mode: TransactionListMode
+    @Binding var selectedDay: Date?
     let onOpen: (TransactionFormRoute) -> Void
 
     @Environment(\.modelContext) private var context
@@ -102,10 +111,11 @@ private struct MonthTransactionsView: View {
     @Query private var transactions: [MoneyTransaction]
     @State private var pendingDelete: MoneyTransaction?
 
-    init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>, onOpen: @escaping (TransactionFormRoute) -> Void) {
+    init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>, selectedDay: Binding<Date?>, onOpen: @escaping (TransactionFormRoute) -> Void) {
         self.profile = profile
         _month = month
         _mode = mode
+        _selectedDay = selectedDay
         self.onOpen = onOpen
         let interval = TransactionQueries.monthInterval(containing: month.wrappedValue, calendar: .current)
         _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
@@ -140,7 +150,9 @@ private struct MonthTransactionsView: View {
             } else {
                 dailyList
             }
-        case .calendar, .monthly:
+        case .calendar:
+            calendarList
+        case .monthly:
             ContentUnavailableView("Segera hadir", systemImage: "calendar", description: Text("Tampilan \(mode.rawValue) sedang dibuat."))
         }
     }
@@ -158,6 +170,43 @@ private struct MonthTransactionsView: View {
         }
         .listStyle(.insetGrouped)
         // Keeps the last rows clear of the floating + button.
+        .contentMargins(.bottom, 72, for: .scrollContent)
+    }
+
+    private var calendarList: some View {
+        let calendar = Calendar.current
+        let selected = selectedDay.flatMap { day in
+            TransactionSummary.daySections(transactions, calendar: calendar).first { $0.id == day }
+        }
+        return List {
+            Section {
+                CalendarMonthView(
+                    month: month,
+                    dayTotals: TransactionSummary.dayTotals(transactions, calendar: calendar),
+                    selectedDay: $selectedDay
+                )
+                .simultaneousGesture(monthSwipe)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+            if let selected {
+                DailySectionView(
+                    section: selected,
+                    onOpen: { onOpen(.edit($0)) },
+                    onDelete: { pendingDelete = $0 },
+                    onDuplicate: duplicate
+                )
+            } else if let day = selectedDay {
+                Section {
+                    Text("Tidak ada transaksi")
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(day, format: .dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "id_ID")))
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
         .contentMargins(.bottom, 72, for: .scrollContent)
     }
 

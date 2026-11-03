@@ -32,7 +32,7 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $selection) {
             Tab("Transaksi", systemImage: "list.bullet.rectangle.portrait", value: AppTab.transactions) {
-                withGestureBridge(placeholder("Transaksi", systemImage: "list.bullet.rectangle.portrait"))
+                withGestureBridge(TransactionListView())
             }
             Tab("Statistik", systemImage: "chart.pie", value: AppTab.statistics) {
                 withGestureBridge(placeholder("Statistik", systemImage: "chart.pie"))

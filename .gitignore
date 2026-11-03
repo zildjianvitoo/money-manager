@@ -5,3 +5,7 @@ DerivedData/
 *.xcuserstate
 .swiftpm/
 .superpowers/
+
+# Data pribadi (backup, seed impor) - jangan di-commit
+private/
+money-manager/DebugSeed/

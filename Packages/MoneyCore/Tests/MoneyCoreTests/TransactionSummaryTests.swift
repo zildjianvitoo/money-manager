@@ -102,3 +102,49 @@ private func date(_ cal: Calendar, _ y: Int, _ m: Int, _ d: Int, _ h: Int = 12, 
     #expect(fetched[0] === late)
     #expect(fetched[1] === early)
 }
+
+@MainActor @Test func monthRowsAlwaysTwelve() throws {
+    let container = try MoneySchema.makeContainer(inMemory: true)
+    let ctx = container.mainContext
+    let cal = jakartaCalendar()
+    let p = UUID()
+    let txs = [
+        MoneyTransaction(profileID: p, type: .income, amount: 100_000, date: date(cal, 2026, 1, 5)),
+        MoneyTransaction(profileID: p, type: .expense, amount: 30_000, date: date(cal, 2026, 12, 31, 23, 59)),
+        MoneyTransaction(profileID: p, type: .expense, amount: 99_000, date: date(cal, 2027, 1, 1, 0, 0)),
+    ]
+    txs.forEach { ctx.insert($0) }
+    let rows = TransactionSummary.monthRows(txs, year: date(cal, 2026, 6, 1), calendar: cal)
+    #expect(rows.count == 12)
+    #expect(rows[0].id == date(cal, 2026, 1, 1, 0))
+    #expect(rows[0].income == 100_000)
+    #expect(rows[5].income == 0 && rows[5].expense == 0)
+    #expect(rows[11].expense == 30_000)
+    #expect(rows[11].total == -30_000)
+    #expect(rows.map(\.expense).reduce(0, +) == 30_000)
+    let interval = TransactionQueries.yearInterval(containing: date(cal, 2026, 6, 1), calendar: cal)
+    #expect(interval.start == date(cal, 2026, 1, 1, 0))
+    #expect(interval.end == date(cal, 2027, 1, 1, 0))
+}
+
+@MainActor @Test func dayTotalsMatchDaySections() throws {
+    let container = try MoneySchema.makeContainer(inMemory: true)
+    let ctx = container.mainContext
+    let cal = jakartaCalendar()
+    let p = UUID()
+    let transfer = MoneyTransaction(profileID: p, type: .transfer, amount: 50_000, date: date(cal, 2026, 10, 30, 7))
+    transfer.fee = 2_500
+    let txs = [
+        MoneyTransaction(profileID: p, type: .expense, amount: 5_000, date: date(cal, 2026, 10, 29, 9)),
+        MoneyTransaction(profileID: p, type: .expense, amount: 10_000, date: date(cal, 2026, 10, 30, 8)),
+        MoneyTransaction(profileID: p, type: .income, amount: 40_000, date: date(cal, 2026, 10, 30, 18)),
+        transfer,
+    ]
+    txs.forEach { ctx.insert($0) }
+    let totals = TransactionSummary.dayTotals(txs, calendar: cal)
+    let sections = TransactionSummary.daySections(txs, calendar: cal)
+    #expect(totals.count == sections.count)
+    for section in sections {
+        #expect(totals[section.id] == DayTotals(income: section.income, expense: section.expense))
+    }
+}

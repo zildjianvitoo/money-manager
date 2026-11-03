@@ -123,7 +123,8 @@ private struct TrendChart: View {
         }
         .chartXAxis {
             AxisMarks(values: .stride(by: .month)) { _ in
-                AxisValueLabel(format: .dateTime.month(.abbreviated), centered: true)
+                // Fixed id_ID month names, like the rest of the app, whatever the device language.
+                AxisValueLabel(format: .dateTime.month(.abbreviated).locale(Locale(identifier: "id_ID")), centered: true)
             }
         }
         .chartYAxis {

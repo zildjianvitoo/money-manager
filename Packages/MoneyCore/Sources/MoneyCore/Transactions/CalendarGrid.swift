@@ -19,8 +19,11 @@ public enum CalendarGrid {
 
     /// Simbol hari pendek sesuai `firstWeekday` kalender, mis. ["Min", "Sen", ...].
     public static func weekdaySymbols(calendar: Calendar) -> [String] {
-        let symbols = calendar.shortWeekdaySymbols
+        // Selalu bahasa Indonesia, apa pun bahasa perangkat; urutan tetap mengikuti `firstWeekday`.
         let start = calendar.firstWeekday - 1
+        var indonesian = calendar
+        indonesian.locale = Locale(identifier: "id_ID")
+        let symbols = indonesian.shortWeekdaySymbols
         return Array(symbols[start...] + symbols[..<start])
     }
 }

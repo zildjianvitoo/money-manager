@@ -42,4 +42,6 @@ private func date(_ cal: Calendar, _ y: Int, _ m: Int, _ d: Int, _ h: Int = 12) 
     let monday = CalendarGrid.weekdaySymbols(calendar: jakartaCalendar(firstWeekday: 2))
     #expect(monday.first == sunday[1])
     #expect(monday.last == sunday[0])
+    #expect(sunday.first == "Min")
+    #expect(monday.first == "Sen")
 }

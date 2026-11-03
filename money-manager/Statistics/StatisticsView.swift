@@ -385,10 +385,11 @@ struct ShareRow: View {
                     badge
                     Text(row.emoji)
                         .font(.title3)
+                        .frame(width: 32)
                         .accessibilityHidden(true)
                     Text(row.name)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     amount
                         .lineLimit(1)
                         .layoutPriority(1)

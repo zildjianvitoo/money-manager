@@ -17,6 +17,7 @@ struct MoreView: View {
     #endif
 
     @Environment(AppLockController.self) private var lockController
+    @State private var iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -69,6 +70,18 @@ struct MoreView: View {
                         }
                     }
                 }
+                Section {
+                    LabeledContent {
+                        Text(iCloudAvailable ? "Aktif" : "Tidak tersedia")
+                            .foregroundStyle(iCloudAvailable ? Color.green : Color.secondary)
+                    } label: {
+                        Label("iCloud", systemImage: "icloud")
+                    }
+                } footer: {
+                    if !iCloudAvailable {
+                        Text("Data tersimpan di iPhone ini. Masuk ke iCloud di Pengaturan agar data ikut tersinkron.")
+                    }
+                }
                 #if DEBUG
                 let seeds = SeedImporter.available
                 if !seeds.isEmpty {
@@ -92,6 +105,10 @@ struct MoreView: View {
                 }
             }
             .navigationTitle("Lainnya")
+            .onAppear(perform: refreshICloudStatus)
+            .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange)) { _ in
+                refreshICloudStatus()
+            }
             #if DEBUG
             .confirmationDialog(
                 "Impor data awal \(pendingSeed?.profile ?? "")?",
@@ -110,6 +127,10 @@ struct MoreView: View {
             }
             #endif
         }
+    }
+
+    private func refreshICloudStatus() {
+        iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
     }
 
     #if DEBUG

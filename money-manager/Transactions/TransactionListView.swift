@@ -42,13 +42,17 @@ struct TransactionListView: View {
         NavigationStack {
             Group {
                 if let profile = activeProfile {
-                    MonthTransactionsView(
-                        profile: profile,
-                        month: $month,
-                        mode: $mode,
-                        selectedDay: $selectedDay,
-                        onOpen: { formRoute = $0 }
-                    )
+                    if mode == .monthly {
+                        YearTransactionsView(profile: profile, month: $month, mode: $mode)
+                    } else {
+                        MonthTransactionsView(
+                            profile: profile,
+                            month: $month,
+                            mode: $mode,
+                            selectedDay: $selectedDay,
+                            onOpen: { formRoute = $0 }
+                        )
+                    }
                 } else {
                     ProgressView()
                 }
@@ -153,7 +157,8 @@ private struct MonthTransactionsView: View {
         case .calendar:
             calendarList
         case .monthly:
-            ContentUnavailableView("Segera hadir", systemImage: "calendar", description: Text("Tampilan \(mode.rawValue) sedang dibuat."))
+            // Handled by `YearTransactionsView`.
+            EmptyView()
         }
     }
 
@@ -224,61 +229,20 @@ private struct MonthTransactionsView: View {
     // MARK: Header
 
     private var header: some View {
-        let summary = TransactionSummary.month(transactions)
-        return VStack(spacing: 12) {
-            monthNavigator
-            HStack(alignment: .top) {
-                SummaryColumn(title: "Pendapatan", amount: summary.income, color: .blue)
-                SummaryColumn(title: "Pengeluaran", amount: summary.expense, color: .red)
-                SummaryColumn(title: "Total", amount: summary.total, color: .primary)
-            }
-            Picker("Tampilan", selection: $mode) {
-                ForEach(TransactionListMode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        // Pinned bar: capped like system bars so accessibility sizes don't fill the screen; the list still scales.
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        // Opaque so rows scroll beneath it; `.safeAreaBar` blurred the large title.
-        .background(Color(.systemGroupedBackground), ignoresSafeAreaEdges: [])
-        .contentShape(Rectangle())
-        // High priority: the inset sits on the list's scroll view, whose pan would win otherwise.
-        .highPriorityGesture(monthSwipe)
+        TransactionListHeader(
+            title: MonthFormat.string(month),
+            previousLabel: "Bulan sebelumnya",
+            nextLabel: "Bulan berikutnya",
+            summary: TransactionSummary.month(transactions),
+            mode: $mode,
+            onShift: shiftMonth
+        )
     }
 
-    private var monthNavigator: some View {
-        // Chevrons pinned to the header edges; each one's button fills the space up to the month, so the whole side is tappable.
-        HStack(spacing: 8) {
-            Button { shiftMonth(-1) } label: {
-                Image(systemName: "chevron.left")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Bulan sebelumnya")
-            Text(MonthFormat.string(month))
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-            Button { shiftMonth(1) } label: {
-                Image(systemName: "chevron.right")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Bulan berikutnya")
-        }
-    }
-
-    /// Horizontal swipe on the header or the empty state changes month.
+    /// Horizontal swipe on the header, the calendar grid or the empty state changes month.
     /// The list itself keeps horizontal swipes for the row actions.
     private var monthSwipe: some Gesture {
-        DragGesture(minimumDistance: 30)
-            .onEnded { value in
-                let dx = value.translation.width
-                guard abs(dx) > 60, abs(dx) > abs(value.translation.height) * 2 else { return }
-                shiftMonth(dx < 0 ? 1 : -1)
-            }
+        PeriodSwipe.gesture(onShift: shiftMonth)
     }
 
     private func shiftMonth(_ delta: Int) {
@@ -314,6 +278,125 @@ private struct MonthTransactionsView: View {
         } catch {
             assertionFailure("Duplikat transaksi gagal: \(error)")
         }
+    }
+}
+
+/// Pinned header shared by the month and year screens: navigator, summary columns and the mode picker.
+private struct TransactionListHeader: View {
+    let title: String
+    let previousLabel: String
+    let nextLabel: String
+    let summary: MonthSummary
+    @Binding var mode: TransactionListMode
+    let onShift: (Int) -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            navigator
+            HStack(alignment: .top) {
+                SummaryColumn(title: "Pendapatan", amount: summary.income, color: .blue)
+                SummaryColumn(title: "Pengeluaran", amount: summary.expense, color: .red)
+                SummaryColumn(title: "Total", amount: summary.total, color: .primary)
+            }
+            Picker("Tampilan", selection: $mode) {
+                ForEach(TransactionListMode.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        // Pinned bar: capped like system bars so accessibility sizes don't fill the screen; the list still scales.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        // Opaque so rows scroll beneath it; `.safeAreaBar` blurred the large title.
+        .background(Color(.systemGroupedBackground), ignoresSafeAreaEdges: [])
+        .contentShape(Rectangle())
+        // High priority: the inset sits on the list's scroll view, whose pan would win otherwise.
+        .highPriorityGesture(PeriodSwipe.gesture(onShift: onShift))
+    }
+
+    private var navigator: some View {
+        // Chevrons pinned to the header edges; each one's button fills the space up to the title, so the whole side is tappable.
+        HStack(spacing: 8) {
+            Button { onShift(-1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(previousLabel)
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Button { onShift(1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(nextLabel)
+        }
+    }
+}
+
+private enum PeriodSwipe {
+    static func gesture(onShift: @escaping (Int) -> Void) -> some Gesture {
+        DragGesture(minimumDistance: 30)
+            .onEnded { value in
+                let dx = value.translation.width
+                guard abs(dx) > 60, abs(dx) > abs(value.translation.height) * 2 else { return }
+                onShift(dx < 0 ? 1 : -1)
+            }
+    }
+}
+
+/// "Bulanan": owns the `@Query` for one profile and year; 12 month rows, newest first.
+private struct YearTransactionsView: View {
+    let profile: Profile
+    @Binding var month: Date
+    @Binding var mode: TransactionListMode
+
+    @Query private var transactions: [MoneyTransaction]
+
+    init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>) {
+        self.profile = profile
+        _month = month
+        _mode = mode
+        let interval = TransactionQueries.yearInterval(containing: month.wrappedValue, calendar: .current)
+        _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
+    }
+
+    var body: some View {
+        MonthlyYearView(rows: rows, onSelect: select)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                TransactionListHeader(
+                    title: String(Calendar.current.component(.year, from: month)),
+                    previousLabel: "Tahun sebelumnya",
+                    nextLabel: "Tahun berikutnya",
+                    summary: TransactionSummary.month(transactions),
+                    mode: $mode,
+                    onShift: shiftYear
+                )
+            }
+    }
+
+    /// Newest month first; months after the current one are hidden in the current year.
+    private var rows: [MonthRow] {
+        let calendar = Calendar.current
+        let all = TransactionSummary.monthRows(transactions, year: month, calendar: calendar)
+        let thisMonth = calendar.dateInterval(of: .month, for: .now)?.start ?? .now
+        let isCurrentYear = calendar.isDate(month, equalTo: .now, toGranularity: .year)
+        return all
+            .filter { !isCurrentYear || $0.id <= thisMonth }
+            .sorted { $0.id > $1.id }
+    }
+
+    private func select(_ row: MonthRow) {
+        month = row.id
+        mode = .daily
+    }
+
+    private func shiftYear(_ delta: Int) {
+        guard let next = Calendar.current.date(byAdding: .year, value: delta, to: month) else { return }
+        withAnimation { month = next }
     }
 }
 

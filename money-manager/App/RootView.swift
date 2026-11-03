@@ -38,7 +38,7 @@ struct RootView: View {
                 withGestureBridge(placeholder("Statistik", systemImage: "chart.pie"))
             }
             Tab("Aset", systemImage: "building.columns", value: AppTab.assets) {
-                withGestureBridge(placeholder("Aset", systemImage: "building.columns"))
+                withGestureBridge(AssetListView())
             }
             Tab(value: AppTab.profile) {
                 withGestureBridge(MoreView(activeProfile: activeProfile) { isSwitcherPresented = true })

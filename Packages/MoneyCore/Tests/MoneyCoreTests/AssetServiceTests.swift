@@ -124,4 +124,60 @@ struct AssetServiceTests {
         }
         #expect(try f.allTransactions().isEmpty)
     }
+
+    @Test func updateChangesFieldsAndMovesToEndOfNewGroup() throws {
+        let f = try makeFixture()
+        let asset = try f.service.create(name: "Dompet", group: .cash, initialBalance: 10_000)
+        _ = try f.service.create(name: "B1", group: .bank, initialBalance: 0)
+        let b2 = try f.service.create(name: "B2", group: .bank, initialBalance: 0)
+
+        try f.service.update(
+            asset, name: "  BCA  ", group: .bank, initialBalance: -2_500,
+            includeInTotal: false, isArchived: true
+        )
+        #expect(asset.name == "BCA")
+        #expect(asset.group == .bank)
+        #expect(asset.initialBalance == -2_500)
+        #expect(asset.includeInTotal == false)
+        #expect(asset.isArchived == true)
+        #expect(asset.sortOrder == b2.sortOrder + 1)
+
+        // Grup yang sama tidak mengubah urutan.
+        try f.service.update(
+            asset, name: "BCA", group: .bank, initialBalance: 0, includeInTotal: true, isArchived: false
+        )
+        #expect(asset.sortOrder == b2.sortOrder + 1)
+    }
+
+    @Test func updateRejectsInvalidInputAndForeignAsset() throws {
+        let f = try makeFixture()
+        let asset = try f.service.create(name: "Dompet", group: .cash, initialBalance: 10_000)
+        #expect(throws: AssetServiceError.emptyName) {
+            try f.service.update(
+                asset, name: " ", group: .bank, initialBalance: 1, includeInTotal: false, isArchived: true
+            )
+        }
+        #expect(throws: AssetServiceError.amountTooLarge) {
+            try f.service.update(
+                asset, name: "X", group: .bank, initialBalance: Decimal(string: "1000000000000000")!,
+                includeInTotal: false, isArchived: true
+            )
+        }
+        // Gagal validasi tidak mengubah apa pun.
+        #expect(asset.name == "Dompet")
+        #expect(asset.group == .cash)
+        #expect(asset.initialBalance == 10_000)
+        #expect(asset.includeInTotal == true)
+        #expect(asset.isArchived == false)
+
+        let other = AssetService(context: f.context, profileID: UUID())
+        let foreign = try other.create(name: "Asing", group: .bank, initialBalance: 10)
+        #expect(throws: AssetServiceError.foreignAsset) {
+            try f.service.update(
+                foreign, name: "Dicuri", group: .cash, initialBalance: 0, includeInTotal: true, isArchived: false
+            )
+        }
+        #expect(foreign.name == "Asing")
+        #expect(foreign.group == .bank)
+    }
 }

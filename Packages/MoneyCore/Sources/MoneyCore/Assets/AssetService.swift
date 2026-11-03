@@ -5,7 +5,7 @@ public enum AssetServiceError: Error, Equatable {
     case emptyName, foreignAsset, amountTooLarge
 }
 
-/// Daftar, pembuatan, penyesuaian saldo, dan pengarsipan aset milik satu profil.
+/// Daftar, pembuatan, pengubahan, penyesuaian saldo, dan pengarsipan aset milik satu profil.
 @MainActor
 public struct AssetService {
     private let context: ModelContext
@@ -37,16 +37,31 @@ public struct AssetService {
         guard !trimmed.isEmpty else { throw AssetServiceError.emptyName }
         try requireWithinCap(initialBalance)
 
-        let pid = profileID
-        let raw = group.rawValue
-        let sameGroup = try context.fetch(
-            FetchDescriptor<AssetAccount>(predicate: #Predicate { $0.profileID == pid && $0.groupRaw == raw })
-        )
         let asset = AssetAccount(profileID: profileID, name: trimmed, group: group, initialBalance: initialBalance)
-        asset.sortOrder = (sameGroup.map(\.sortOrder).max() ?? -1) + 1
+        asset.sortOrder = try nextSortOrder(in: group)
         context.insert(asset)
         try context.save()
         return asset
+    }
+
+    /// Mengubah nama, grup, saldo awal, dan pengaturan aset. Semua masukan divalidasi sebelum ada yang diubah.
+    /// Pindah grup menaruh aset di urutan terakhir grup baru.
+    public func update(
+        _ asset: AssetAccount, name: String, group: AssetGroup, initialBalance: Decimal,
+        includeInTotal: Bool, isArchived: Bool
+    ) throws {
+        try requireOwned(asset)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw AssetServiceError.emptyName }
+        try requireWithinCap(initialBalance)
+
+        if group != asset.group { asset.sortOrder = try nextSortOrder(in: group) }
+        asset.name = trimmed
+        asset.group = group
+        asset.initialBalance = initialBalance
+        asset.includeInTotal = includeInTotal
+        asset.isArchived = isArchived
+        try context.save()
     }
 
     /// Membuat transaksi `.adjustment` bertanda sebesar `actual − saldo sekarang`. `nil` bila selisih 0.
@@ -81,6 +96,15 @@ public struct AssetService {
 
     /// Batas nominal yang sama dengan TransactionService dan AmountParser.
     private static let maxAmount = Decimal(string: "999999999999999")!
+
+    private func nextSortOrder(in group: AssetGroup) throws -> Int {
+        let pid = profileID
+        let raw = group.rawValue
+        let sameGroup = try context.fetch(
+            FetchDescriptor<AssetAccount>(predicate: #Predicate { $0.profileID == pid && $0.groupRaw == raw })
+        )
+        return (sameGroup.map(\.sortOrder).max() ?? -1) + 1
+    }
 
     private func requireOwned(_ asset: AssetAccount) throws {
         guard asset.profileID == profileID else { throw AssetServiceError.foreignAsset }

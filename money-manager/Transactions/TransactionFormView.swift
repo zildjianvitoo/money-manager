@@ -70,10 +70,6 @@ struct TransactionFormView: View {
         profileID.map { TransactionService(context: context, profileID: $0) }
     }
 
-    private var isEditing: Bool {
-        if case .edit = mode { true } else { false }
-    }
-
     private var amountResult: Result<Decimal, AmountParserError> {
         Result { () throws(AmountParserError) in try AmountParser.evaluate(amountExpression) }
     }
@@ -215,7 +211,7 @@ struct TransactionFormView: View {
             Button("Batal") { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
-            Button("Simpan") { save(continuing: false) }
+            Button("Simpan", action: save)
                 .disabled(!canSave)
         }
         if textFocus == .note {
@@ -287,17 +283,8 @@ struct TransactionFormView: View {
     private var bottomPanel: some View {
         let keypadField = picker == nil ? activeField : nil
         // Hidden while the system keyboard is up; it would ride above it and cover the field.
-        if textFocus == nil, keypadField != nil || !isEditing {
+        if textFocus == nil {
             VStack(spacing: 0) {
-                if !isEditing {
-                    Button("Simpan & Lanjut") { save(continuing: true) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 8)
-                        .disabled(!canSave)
-                }
                 if let field = keypadField {
                     CalculatorKeypad(
                         expression: field == .amount ? $amountExpression : $feeExpression,
@@ -524,7 +511,7 @@ struct TransactionFormView: View {
         }
     }
 
-    private func save(continuing: Bool) {
+    private func save() {
         guard let d = resolvedDraft, let service else { return }
         do {
             switch mode {
@@ -532,17 +519,10 @@ struct TransactionFormView: View {
             case .edit(let tx): try service.update(tx, with: d)
             }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+            dismiss()
         } catch {
             assertionFailure("Simpan transaksi gagal: \(error)")
-            return
         }
-        guard continuing else { return dismiss() }
-        // Keep date and type, clear the rest for the next entry.
-        draft = TransactionDraft(type: d.type, date: d.date)
-        amountExpression = ""
-        feeExpression = ""
-        textFocus = nil
-        activeField = .amount
     }
 
     private func duplicate(_ tx: MoneyTransaction) {

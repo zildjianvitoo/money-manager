@@ -14,6 +14,18 @@ public enum AssetGroup: String, CaseIterable, Sendable {
         case .other: "Lainnya"
         }
     }
+
+    /// Icon shown next to assets of this group, matching the emoji style of categories.
+    public var emoji: String {
+        switch self {
+        case .cash: "💵"
+        case .bank: "🏦"
+        case .eWallet: "📱"
+        case .creditCard: "💳"
+        case .investment: "📈"
+        case .other: "👛"
+        }
+    }
 }
 
 @Model

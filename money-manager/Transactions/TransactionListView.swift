@@ -51,7 +51,8 @@ struct TransactionListView: View {
                 }
             }
             .navigationTitle("Transaksi")
-            .navigationBarTitleDisplayMode(.large)
+            // Large title in the bar row itself: `.large` adds an empty bar above it, since this screen has no toolbar items.
+            .toolbarTitleDisplayMode(.inlineLarge)
             .overlay(alignment: .bottomTrailing) {
                 if activeProfile != nil {
                     addButton
@@ -131,6 +132,9 @@ private struct MonthTransactionsView: View {
         case .daily:
             if transactions.isEmpty {
                 emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Same backdrop as the header and the grouped list, so no band shows between them.
+                    .background(Color(.systemGroupedBackground))
                     .contentShape(Rectangle())
                     .gesture(monthSwipe)
             } else {
@@ -173,17 +177,7 @@ private struct MonthTransactionsView: View {
     private var header: some View {
         let summary = TransactionSummary.month(transactions)
         return VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Capsule()
-                    .fill(Color(hex: profile.colorHex))
-                    .frame(width: 4, height: 18)
-                    .accessibilityHidden(true)
-                Text(profile.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                monthNavigator
-            }
+            monthNavigator
             HStack(alignment: .top) {
                 SummaryColumn(title: "Pendapatan", amount: summary.income, color: .blue)
                 SummaryColumn(title: "Pengeluaran", amount: summary.expense, color: .red)
@@ -206,13 +200,14 @@ private struct MonthTransactionsView: View {
     }
 
     private var monthNavigator: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 16) {
             Button { shiftMonth(-1) } label: {
                 Image(systemName: "chevron.left").frame(width: 44, height: 44)
             }
             .accessibilityLabel("Bulan sebelumnya")
             Text(MonthFormat.string(month))
-                .font(.headline)
+                .font(.title3.weight(.semibold))
+                .frame(minWidth: 120)
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Button { shiftMonth(1) } label: {

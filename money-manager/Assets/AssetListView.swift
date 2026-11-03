@@ -239,7 +239,10 @@ private struct AssetRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    Text(asset.group.emoji)
+                        .font(.title2)
+                        .accessibilityHidden(true)
                     nameAndNotes
                     Spacer(minLength: 8)
                     balanceText

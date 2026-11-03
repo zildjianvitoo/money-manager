@@ -90,7 +90,7 @@ struct AssetPickerSheet: View {
             ScrollView {
                 LazyVGrid(columns: gridColumns, spacing: 10) {
                     ForEach(assets) { asset in
-                        PickerTile(symbol: symbol(for: asset.group), title: asset.name, isSelected: asset.id == selectedID) {
+                        PickerTile(emoji: asset.group.emoji, title: asset.name, isSelected: asset.id == selectedID) {
                             onPick(asset)
                         }
                     }
@@ -112,22 +112,10 @@ struct AssetPickerSheet: View {
     private var assets: [AssetAccount] {
         (try? AssetService(context: context, profileID: profileID).assets(includeArchived: false)) ?? []
     }
-
-    private func symbol(for group: AssetGroup) -> String {
-        switch group {
-        case .cash: "banknote"
-        case .bank: "building.columns"
-        case .eWallet: "iphone"
-        case .creditCard: "creditcard"
-        case .investment: "chart.line.uptrend.xyaxis"
-        case .other: "wallet.bifold"
-        }
-    }
 }
 
 private struct PickerTile: View {
-    var emoji: String = ""
-    var symbol: String?
+    let emoji: String
     let title: String
     let isSelected: Bool
     var showsChevron = false
@@ -136,15 +124,10 @@ private struct PickerTile: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Group {
-                    if let symbol {
-                        Image(systemName: symbol).font(.title2)
-                    } else {
-                        Text(emoji.isEmpty ? "•" : emoji).font(.title)
-                    }
-                }
-                .frame(height: 32)
-                .accessibilityHidden(true)
+                Text(emoji.isEmpty ? "•" : emoji)
+                    .font(.title)
+                    .frame(height: 32)
+                    .accessibilityHidden(true)
                 HStack(spacing: 2) {
                     Text(title)
                         .font(.footnote)
@@ -155,7 +138,8 @@ private struct PickerTile: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 80, alignment: .top)
+            // Tall enough for a two-line title, so every tile is the same size and its content sits centered.
+            .frame(maxWidth: .infinity, minHeight: 96, maxHeight: .infinity)
             .padding(.horizontal, 6)
             .padding(.vertical, 10)
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))

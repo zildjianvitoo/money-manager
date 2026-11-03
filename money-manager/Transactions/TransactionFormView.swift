@@ -26,6 +26,9 @@ struct TransactionFormView: View {
     @State private var showsAmountError = false
     @State private var showsFeeError = false
     @State private var isConfirmingDelete = false
+    /// Set when a picker closes the quick flow; the note gets focus once the sheet is gone.
+    @State private var focusesNoteAfterPicker = false
+    @State private var appliedProfileDefaults = false
     @FocusState private var textFocus: TextFocus?
 
     private enum Field { case amount, fee }
@@ -148,6 +151,7 @@ struct TransactionFormView: View {
                     Section {
                         TextField("Catatan", text: $draft.note)
                             .focused($textFocus, equals: .note)
+                            .id(TextFocus.note)
                             // Short everyday labels ("makan siang"); suggestions do the completing.
                             .autocorrectionDisabled()
                             .submitLabel(.next)
@@ -169,6 +173,12 @@ struct TransactionFormView: View {
                     guard let field else { return }
                     withAnimation { proxy.scrollTo(field, anchor: .center) }
                 }
+                // Keeps the note and its suggestion bar clear of the keyboard.
+                // The form's own keyboard avoidance ignores the suggestion bar on top of the keyboard.
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                    guard textFocus == .note else { return }
+                    withAnimation { proxy.scrollTo(TextFocus.note, anchor: .center) }
+                }
             }
             .navigationTitle(title)
             .navigationSubtitle(profile.map { "Profil: \($0.name)" } ?? "")
@@ -178,7 +188,12 @@ struct TransactionFormView: View {
             .onChange(of: textFocus) { _, focus in
                 if focus != nil { activeField = nil }
             }
-            .sheet(item: $picker) { picker in
+            .onAppear(perform: applyProfileDefaults)
+            .sheet(item: $picker, onDismiss: {
+                guard focusesNoteAfterPicker else { return }
+                focusesNoteAfterPicker = false
+                textFocus = .note
+            }) { picker in
                 pickerSheet(picker)
             }
             .confirmationDialog("Hapus transaksi ini?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
@@ -338,8 +353,12 @@ struct TransactionFormView: View {
                     selectedID: draft.categoryID
                 ) { category in
                     draft.categoryID = category.id
-                    // Quick flow: go straight on to the asset unless one is already set.
-                    picker = draft.assetID == nil ? .asset : nil
+                    // Quick flow: go straight on to the asset unless one is already set, then to the note.
+                    if draft.assetID == nil {
+                        picker = .asset
+                    } else {
+                        finishPickerFlow()
+                    }
                 }
             case .asset, .fromAsset, .toAsset:
                 AssetPickerSheet(
@@ -349,10 +368,14 @@ struct TransactionFormView: View {
                 ) { asset in
                     if target == .toAsset {
                         draft.toAssetID = asset.id
-                        picker = nil
+                        finishPickerFlow()
                     } else {
                         draft.assetID = asset.id
-                        picker = target == .fromAsset && draft.toAssetID == nil ? .toAsset : nil
+                        if target == .fromAsset && draft.toAssetID == nil {
+                            picker = .toAsset
+                        } else {
+                            finishPickerFlow()
+                        }
                     }
                 }
             }
@@ -383,11 +406,41 @@ struct TransactionFormView: View {
         return try? context.fetch(descriptor).first
     }
 
-    /// Raw expression while typing; the formatted amount otherwise.
+    /// Expression with thousands dots while typing; the formatted amount otherwise.
     private func displayText(expression: String, result: Result<Decimal, AmountParserError>, isActive: Bool) -> String {
         if expression.isEmpty { return "Rp 0" }
         if !isActive, case .success(let value) = result { return MoneyFormatter.string(value) }
-        return expression
+        return "Rp " + Self.groupingDigits(expression)
+    }
+
+    /// `"12500+3000,5"` → `"12.500+3.000,5"`: dots every three digits in each number's integer part.
+    static func groupingDigits(_ expression: String) -> String {
+        var output = ""
+        var digits = ""
+        var inFraction = false
+        func flush() {
+            guard !digits.isEmpty else { return }
+            if inFraction {
+                output += digits
+            } else {
+                for (index, digit) in digits.enumerated() {
+                    if index > 0, (digits.count - index) % 3 == 0 { output += "." }
+                    output.append(digit)
+                }
+            }
+            digits = ""
+        }
+        for character in expression {
+            if character.isNumber {
+                digits.append(character)
+            } else {
+                flush()
+                output.append(character)
+                inFraction = character == ","
+            }
+        }
+        flush()
+        return output
     }
 
     /// Errors show once the expression looks complete (or after `=`/`Ya`), not mid-typing like `12+`.
@@ -428,6 +481,19 @@ struct TransactionFormView: View {
             if newType != .transfer { draft.toAssetID = nil }
             draft.type = newType
         }
+    }
+
+    /// Closes the picker; an empty note gets focus next, so the entry flows date → total → category → asset → note.
+    private func finishPickerFlow() {
+        focusesNoteAfterPicker = draft.note.isEmpty
+        picker = nil
+    }
+
+    /// New entries open on the type the profile records most: income for a business, expense otherwise.
+    private func applyProfileDefaults() {
+        guard !appliedProfileDefaults, case .create = mode, let profile else { return }
+        appliedProfileDefaults = true
+        if profile.kind == .business { draft.type = .income }
     }
 
     private func activate(_ field: Field) {

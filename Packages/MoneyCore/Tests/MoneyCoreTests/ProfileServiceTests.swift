@@ -125,6 +125,34 @@ struct ProfileServiceTests {
         #expect(try assets(ctx, b.id).count == 1)
     }
 
+    @Test func businessProfileSeedsBusinessCategories() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let service = ProfileService(context: ctx)
+        let a = try service.bootstrap(store: makeStore())
+        #expect(a.kind == .personal)
+        let b = try service.createProfile(name: "Toko", emoji: "💼", colorHex: "#0A84FF", kind: .business, copyCategoriesFrom: nil)
+        #expect(b.kind == .business)
+        let expense = try categories(ctx, b.id, kind: .expense).sorted { $0.sortOrder < $1.sortOrder }
+        let income = try categories(ctx, b.id, kind: .income).sorted { $0.sortOrder < $1.sortOrder }
+        #expect(expense.map(\.name) == DefaultCatalog.businessExpense.map(\.name))
+        #expect(income.map(\.name) == DefaultCatalog.businessIncome.map(\.name))
+        #expect(!expense.contains { $0.name == "Kecantikan" })
+    }
+
+    @Test func updateKindKeepsCategories() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let service = ProfileService(context: ctx)
+        let a = try service.bootstrap(store: makeStore())
+        let before = try categories(ctx, a.id).count
+        try service.update(a, name: a.name, emoji: a.emoji, colorHex: a.colorHex, kind: .business)
+        #expect(a.kind == .business)
+        #expect(try categories(ctx, a.id).count == before)
+        try service.update(a, name: "Pribadi", emoji: a.emoji, colorHex: a.colorHex)
+        #expect(a.kind == .business)
+    }
+
     @Test func profileIsolation() throws {
         let container = try MoneySchema.makeContainer(inMemory: true)
         let ctx = container.mainContext

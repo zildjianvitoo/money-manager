@@ -70,7 +70,7 @@ struct ProfileSwitcherSheet: View {
     }
 }
 
-/// Form for a profile: name, emoji and color, plus an optional category source when creating.
+/// Form for a profile: name, emoji, color and kind (Pribadi/Bisnis), plus an optional category source when creating.
 /// Created with `init(existingProfiles:onCreated:)` for a new profile or `init(editing:onSaved:)` to edit one.
 struct ProfileFormView: View {
     private let existingProfiles: [Profile]
@@ -84,6 +84,7 @@ struct ProfileFormView: View {
     @State private var name = ""
     @State private var emoji = "💼"
     @State private var colorHex = ProfileFormView.colorPresets[5]
+    @State private var kind: ProfileKind = .personal
     @State private var copyCategoriesFrom: UUID?
     @State private var errorMessage: String?
 
@@ -100,6 +101,7 @@ struct ProfileFormView: View {
         _name = State(initialValue: profile.name)
         _emoji = State(initialValue: profile.emoji)
         _colorHex = State(initialValue: profile.colorHex)
+        _kind = State(initialValue: profile.kind)
     }
 
     var body: some View {
@@ -127,10 +129,20 @@ struct ProfileFormView: View {
                 Section("Warna") {
                     colorGrid
                 }
+                Section {
+                    Picker("Jenis", selection: $kind) {
+                        ForEach(ProfileKind.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Jenis")
+                } footer: {
+                    Text(kindFooter)
+                }
                 if editing == nil {
                     Section {
                         Picker("Salin kategori dari", selection: $copyCategoriesFrom) {
-                            Text("Kategori bawaan").tag(UUID?.none)
+                            Text("Kategori bawaan \(kind.displayName)").tag(UUID?.none)
                             ForEach(existingProfiles) { profile in
                                 Text(profile.name).tag(UUID?.some(profile.id))
                             }
@@ -157,6 +169,13 @@ struct ProfileFormView: View {
                 Text(errorMessage ?? "")
             }
         }
+    }
+
+    private var kindFooter: String {
+        if editing != nil { return "Mengubah jenis tidak mengubah kategori yang sudah ada." }
+        return kind == .business
+            ? "Kategori bawaan Bisnis: Penjualan, Modal/Stok, Tagihan & Langganan, Gaji Tim, dan lainnya."
+            : "Kategori bawaan Pribadi: Makanan, Transportasi, Gaji, dan lainnya."
     }
 
     private var colorGrid: some View {
@@ -189,7 +208,7 @@ struct ProfileFormView: View {
         let finalEmoji = emoji.isEmpty ? "🙂" : emoji
         do {
             if let editing {
-                try service.update(editing, name: name, emoji: finalEmoji, colorHex: colorHex)
+                try service.update(editing, name: name, emoji: finalEmoji, colorHex: colorHex, kind: kind)
                 dismiss()
                 onSaved(editing)
             } else {
@@ -197,6 +216,7 @@ struct ProfileFormView: View {
                     name: name,
                     emoji: finalEmoji,
                     colorHex: colorHex,
+                    kind: kind,
                     copyCategoriesFrom: copyCategoriesFrom
                 )
                 UINotificationFeedbackGenerator().notificationOccurred(.success)

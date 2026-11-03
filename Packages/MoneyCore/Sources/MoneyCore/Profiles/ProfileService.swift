@@ -37,19 +37,21 @@ public struct ProfileService {
         try context.fetch(FetchDescriptor<Profile>(sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdAt)]))
     }
 
+    /// `kind` picks the default categories; it is ignored for categories when `copyCategoriesFrom` is set.
     public func createProfile(
-        name: String, emoji: String, colorHex: String, copyCategoriesFrom: UUID?
+        name: String, emoji: String, colorHex: String, kind: ProfileKind = .personal, copyCategoriesFrom: UUID?
     ) throws -> Profile {
         let trimmed = try validatedName(name)
         let nextOrder = (try profiles().map(\.sortOrder).max() ?? -1) + 1
         let profile = Profile(name: trimmed, emoji: emoji, colorHex: colorHex)
         profile.sortOrder = nextOrder
+        profile.kind = kind
         context.insert(profile)
 
         if let source = copyCategoriesFrom {
             try copyCategories(from: source, to: profile.id)
         } else {
-            seedDefaultCategories(for: profile.id)
+            seedDefaultCategories(for: profile.id, kind: kind)
         }
         context.insert(AssetAccount(profileID: profile.id, name: "Tunai", group: .cash, initialBalance: 0))
         try context.save()
@@ -77,11 +79,13 @@ public struct ProfileService {
         store.handleDeleted(id, fallback: fallback)
     }
 
-    public func update(_ profile: Profile, name: String, emoji: String, colorHex: String) throws {
+    /// Changing `kind` only relabels the profile; its existing categories stay as they are.
+    public func update(_ profile: Profile, name: String, emoji: String, colorHex: String, kind: ProfileKind? = nil) throws {
         let trimmed = try validatedName(name)
         profile.name = trimmed
         profile.emoji = emoji
         profile.colorHex = colorHex
+        if let kind { profile.kind = kind }
         try context.save()
     }
 
@@ -114,13 +118,13 @@ public struct ProfileService {
         }
     }
 
-    private func seedDefaultCategories(for profileID: UUID) {
-        for (index, item) in DefaultCatalog.expense.enumerated() {
+    private func seedDefaultCategories(for profileID: UUID, kind: ProfileKind) {
+        for (index, item) in DefaultCatalog.expense(for: kind).enumerated() {
             let category = MoneyCategory(profileID: profileID, name: item.name, kind: .expense, emoji: item.emoji)
             category.sortOrder = index
             context.insert(category)
         }
-        for (index, item) in DefaultCatalog.income.enumerated() {
+        for (index, item) in DefaultCatalog.income(for: kind).enumerated() {
             let category = MoneyCategory(profileID: profileID, name: item.name, kind: .income, emoji: item.emoji)
             category.sortOrder = index
             context.insert(category)

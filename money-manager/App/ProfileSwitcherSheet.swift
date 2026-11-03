@@ -70,10 +70,12 @@ struct ProfileSwitcherSheet: View {
     }
 }
 
-/// Form for a new profile: name, emoji, color and optional category source.
+/// Form for a profile: name, emoji and color, plus an optional category source when creating.
+/// Created with `init(existingProfiles:onCreated:)` for a new profile or `init(editing:onSaved:)` to edit one.
 struct ProfileFormView: View {
-    let existingProfiles: [Profile]
-    let onCreated: (Profile) -> Void
+    private let existingProfiles: [Profile]
+    private let editing: Profile?
+    private let onSaved: (Profile) -> Void
 
     static let colorPresets = ["#FF6B5A", "#FF9F0A", "#FFD60A", "#34C759", "#30B0C7", "#0A84FF", "#5E5CE6", "#BF5AF2"]
 
@@ -84,6 +86,21 @@ struct ProfileFormView: View {
     @State private var colorHex = ProfileFormView.colorPresets[5]
     @State private var copyCategoriesFrom: UUID?
     @State private var errorMessage: String?
+
+    init(existingProfiles: [Profile], onCreated: @escaping (Profile) -> Void) {
+        self.existingProfiles = existingProfiles
+        self.editing = nil
+        self.onSaved = onCreated
+    }
+
+    init(editing profile: Profile, onSaved: @escaping (Profile) -> Void = { _ in }) {
+        self.existingProfiles = []
+        self.editing = profile
+        self.onSaved = onSaved
+        _name = State(initialValue: profile.name)
+        _emoji = State(initialValue: profile.emoji)
+        _colorHex = State(initialValue: profile.colorHex)
+    }
 
     var body: some View {
         NavigationStack {
@@ -110,18 +127,20 @@ struct ProfileFormView: View {
                 Section("Warna") {
                     colorGrid
                 }
-                Section {
-                    Picker("Salin kategori dari", selection: $copyCategoriesFrom) {
-                        Text("Kategori bawaan").tag(UUID?.none)
-                        ForEach(existingProfiles) { profile in
-                            Text(profile.name).tag(UUID?.some(profile.id))
+                if editing == nil {
+                    Section {
+                        Picker("Salin kategori dari", selection: $copyCategoriesFrom) {
+                            Text("Kategori bawaan").tag(UUID?.none)
+                            ForEach(existingProfiles) { profile in
+                                Text(profile.name).tag(UUID?.some(profile.id))
+                            }
                         }
+                    } footer: {
+                        Text("Profil baru punya transaksi, aset, kategori, dan anggaran sendiri.")
                     }
-                } footer: {
-                    Text("Profil baru punya transaksi, aset, kategori, dan anggaran sendiri.")
                 }
             }
-            .navigationTitle("Profil Baru")
+            .navigationTitle(editing == nil ? "Profil Baru" : "Ubah Profil")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -166,16 +185,24 @@ struct ProfileFormView: View {
     }
 
     private func save() {
+        let service = ProfileService(context: context)
+        let finalEmoji = emoji.isEmpty ? "🙂" : emoji
         do {
-            let profile = try ProfileService(context: context).createProfile(
-                name: name,
-                emoji: emoji.isEmpty ? "🙂" : emoji,
-                colorHex: colorHex,
-                copyCategoriesFrom: copyCategoriesFrom
-            )
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            dismiss()
-            onCreated(profile)
+            if let editing {
+                try service.update(editing, name: name, emoji: finalEmoji, colorHex: colorHex)
+                dismiss()
+                onSaved(editing)
+            } else {
+                let profile = try service.createProfile(
+                    name: name,
+                    emoji: finalEmoji,
+                    colorHex: colorHex,
+                    copyCategoriesFrom: copyCategoriesFrom
+                )
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                dismiss()
+                onSaved(profile)
+            }
         } catch {
             errorMessage = "Periksa nama profil lalu coba lagi."
         }

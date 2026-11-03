@@ -41,7 +41,7 @@ struct CalculatorKeypad: View {
     private func keyButton(_ key: Key) -> some View {
         Button { press(key) } label: {
             label(for: key)
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .frame(maxWidth: .infinity, minHeight: 56)
                 .contentShape(Rectangle())
         }
         .buttonStyle(KeypadButtonStyle(isConfirm: key == .confirm))

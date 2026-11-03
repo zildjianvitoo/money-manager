@@ -85,6 +85,8 @@ struct ProfileFormView: View {
     @State private var emoji = "💼"
     @State private var colorHex = ProfileFormView.colorPresets[5]
     @State private var kind: ProfileKind = .personal
+    @State private var isConfirmingDefaults = false
+    @State private var defaultsMessage: String?
     @State private var copyCategoriesFrom: UUID?
     @State private var errorMessage: String?
 
@@ -134,10 +136,15 @@ struct ProfileFormView: View {
                         ForEach(ProfileKind.allCases, id: \.self) { Text($0.displayName).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    if editing != nil {
+                        Button("Rapikan ke kategori bawaan \(kind.displayName)", systemImage: "wand.and.stars") {
+                            isConfirmingDefaults = true
+                        }
+                    }
                 } header: {
                     Text("Jenis")
                 } footer: {
-                    Text(kindFooter)
+                    Text(defaultsMessage ?? kindFooter)
                 }
                 if editing == nil {
                     Section {
@@ -163,6 +170,15 @@ struct ProfileFormView: View {
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .confirmationDialog(
+                "Rapikan kategori ke bawaan \(kind.displayName)?",
+                isPresented: $isConfirmingDefaults,
+                titleVisibility: .visible
+            ) {
+                Button("Rapikan") { applyDefaults() }
+            } message: {
+                Text("Kategori bawaan \(kind.displayName) yang belum ada ditambahkan. Kategori bawaan jenis lain yang tidak punya transaksi dihapus. Kategori yang terpakai dan buatan sendiri tetap ada.")
+            }
             .alert("Gagal menyimpan profil", isPresented: .constant(errorMessage != nil)) {
                 Button("OK") { errorMessage = nil }
             } message: {
@@ -172,7 +188,7 @@ struct ProfileFormView: View {
     }
 
     private var kindFooter: String {
-        if editing != nil { return "Mengubah jenis tidak mengubah kategori yang sudah ada." }
+        if editing != nil { return "Mengubah jenis tidak mengubah kategori. Pakai tombol di atas untuk merapikannya." }
         return kind == .business
             ? "Kategori bawaan Bisnis: Penjualan, Modal/Stok, Tagihan & Langganan, Gaji Tim, dan lainnya."
             : "Kategori bawaan Pribadi: Makanan, Transportasi, Gaji, dan lainnya."
@@ -201,6 +217,22 @@ struct ProfileFormView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Saves the chosen kind and aligns the profile's categories with its defaults.
+    private func applyDefaults() {
+        guard let editing else { return }
+        do {
+            try ProfileService(context: context)
+                .update(editing, name: editing.name, emoji: editing.emoji, colorHex: editing.colorHex, kind: kind)
+            let change = try CategoryService(context: context, profileID: editing.id).applyDefaults(for: kind)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            defaultsMessage = change.added.isEmpty && change.removed.isEmpty
+                ? "Kategori sudah sesuai bawaan \(kind.displayName)."
+                : "Ditambah \(change.added.count), dihapus \(change.removed.count) kategori."
+        } catch {
+            errorMessage = "Kategori tidak bisa dirapikan. Coba lagi."
+        }
     }
 
     private func save() {

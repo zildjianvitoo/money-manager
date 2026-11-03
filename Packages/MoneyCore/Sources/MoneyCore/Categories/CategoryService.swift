@@ -89,6 +89,60 @@ public struct CategoryService {
         try context.save()
     }
 
+    /// Nama kategori yang ditambah dan dihapus oleh `applyDefaults`.
+    public struct DefaultsChange: Equatable {
+        public let added: [String]
+        public let removed: [String]
+    }
+
+    /// Menyelaraskan kategori teratas dengan bawaan jenis profil `kind`: menambah bawaan yang belum ada,
+    /// lalu menghapus bawaan jenis lain yang tidak terpakai (termasuk transaksi subkategorinya).
+    /// Kategori buatan sendiri dan kategori yang terpakai tidak disentuh. Urutan: bawaan dulu, sisanya di belakang.
+    @discardableResult
+    public func applyDefaults(for kind: ProfileKind) throws -> DefaultsChange {
+        let other: ProfileKind = kind == .business ? .personal : .business
+        var added: [String] = []
+        var removed: [String] = []
+        let catalogs: [(CategoryKind, [(emoji: String, name: String)], [(emoji: String, name: String)])] = [
+            (.expense, DefaultCatalog.expense(for: kind), DefaultCatalog.expense(for: other)),
+            (.income, DefaultCatalog.income(for: kind), DefaultCatalog.income(for: other)),
+        ]
+        for (categoryKind, wanted, unwanted) in catalogs {
+            let wantedNames = Set(wanted.map { $0.name.lowercased() })
+            let unwantedNames = Set(unwanted.map { $0.name.lowercased() })
+            var existing = try siblings(kind: categoryKind, parent: nil)
+
+            var removable: [MoneyCategory] = []
+            for category in existing {
+                let name = category.name.lowercased()
+                guard unwantedNames.contains(name), !wantedNames.contains(name) else { continue }
+                if try affectedTransactions(of: category).isEmpty { removable.append(category) }
+            }
+            for category in removable {
+                removed.append(category.name)
+                for child in category.children ?? [] { context.delete(child) }
+                context.delete(category)
+            }
+            existing.removeAll { category in removable.contains { $0.id == category.id } }
+
+            var ordered: [MoneyCategory] = []
+            for item in wanted {
+                if let match = existing.first(where: { $0.name.lowercased() == item.name.lowercased() }) {
+                    ordered.append(match)
+                } else {
+                    let category = MoneyCategory(profileID: profileID, name: item.name, kind: categoryKind, emoji: item.emoji)
+                    context.insert(category)
+                    ordered.append(category)
+                    added.append(item.name)
+                }
+            }
+            ordered += existing.filter { category in !ordered.contains { $0.id == category.id } }
+            for (index, category) in ordered.enumerated() { category.sortOrder = index }
+        }
+        try context.save()
+        return DefaultsChange(added: added, removed: removed)
+    }
+
     // MARK: - Private
 
     private func requireOwned(_ c: MoneyCategory) throws {

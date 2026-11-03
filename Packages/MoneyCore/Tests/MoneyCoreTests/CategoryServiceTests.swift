@@ -260,4 +260,39 @@ struct CategoryServiceTests {
         #expect(foreign.name == "Asing")
         #expect(!foreign.isHidden)
     }
+
+    @Test func applyBusinessDefaultsKeepsUsedAndCustomCategories() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let profiles = ProfileService(context: ctx)
+        let p = try profiles.createProfile(name: "Bisnis", emoji: "💼", colorHex: "#000000", copyCategoriesFrom: nil)
+        let service = CategoryService(context: ctx, profileID: p.id)
+        let expense = try service.topLevel(kind: .expense, includeHidden: true)
+        let food = try #require(expense.first { $0.name == "Makanan" })
+        let beauty = try #require(expense.first { $0.name == "Kecantikan" })
+        _ = try service.create(name: "Tagihan & Langganan", emoji: "🧾", kind: .expense, parent: nil)
+        let custom = try service.create(name: "Kopi Kantor", emoji: "☕️", kind: .expense, parent: nil)
+        let asset = try AssetService(context: ctx, profileID: p.id).create(name: "Kas", group: .cash, initialBalance: 0)
+        var draft = TransactionDraft(type: .expense, date: .now)
+        draft.amount = 10_000; draft.categoryID = food.id; draft.assetID = asset.id
+        try TransactionService(context: ctx, profileID: p.id).create(draft)
+
+        let change = try service.applyDefaults(for: .business)
+
+        let names = try service.topLevel(kind: .expense, includeHidden: true).map(\.name)
+        #expect(Array(names.prefix(DefaultCatalog.businessExpense.count)) == DefaultCatalog.businessExpense.map(\.name))
+        #expect(names.contains("Makanan"))       // terpakai
+        #expect(names.contains("Kopi Kantor"))   // buatan sendiri
+        #expect(!names.contains("Kecantikan"))   // bawaan pribadi, tidak terpakai
+        #expect(change.removed.contains(beauty.name))
+        #expect(!change.added.contains("Tagihan & Langganan"))
+        #expect(change.added.contains("Modal/Stok"))
+        #expect(custom.sortOrder >= DefaultCatalog.businessExpense.count)
+        let income = try service.topLevel(kind: .income, includeHidden: true).map(\.name)
+        #expect(income.starts(with: DefaultCatalog.businessIncome.map(\.name)))
+        #expect(!income.contains("Gaji"))
+
+        // Idempotent.
+        #expect(try service.applyDefaults(for: .business) == .init(added: [], removed: []))
+    }
 }

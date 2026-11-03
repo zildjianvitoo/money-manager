@@ -14,6 +14,8 @@ struct money_managerApp: App {
     private let container: ModelContainer
     @State private var profileStore = ProfileStore()
     @State private var toastCenter = ToastCenter()
+    @State private var lockController = AppLockController()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         do {
@@ -28,6 +30,10 @@ struct money_managerApp: App {
             RootView()
                 .environment(profileStore)
                 .environment(toastCenter)
+                .environment(lockController)
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    lockController.handle(scenePhase: phase)
+                }
                 .task { bootstrapProfiles() }
         }
         .modelContainer(container)

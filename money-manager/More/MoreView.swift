@@ -16,6 +16,8 @@ struct MoreView: View {
     @State private var seedImportError: String?
     #endif
 
+    @Environment(AppLockController.self) private var lockController
+
     private var versionText: String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "-"
@@ -55,7 +57,17 @@ struct MoreView: View {
                 Section {
                     comingSoonRow("Import / Export", systemImage: "square.and.arrow.down.on.square")
                     comingSoonRow("Transaksi Berulang", systemImage: "repeat")
-                    comingSoonRow("Keamanan", systemImage: "faceid")
+                }
+                Section {
+                    NavigationLink {
+                        SecuritySettingsView()
+                    } label: {
+                        LabeledContent {
+                            Text(lockController.settings.isEnabled ? "Aktif" : "Mati")
+                        } label: {
+                            Label("Keamanan", systemImage: "faceid")
+                        }
+                    }
                 }
                 #if DEBUG
                 let seeds = SeedImporter.available

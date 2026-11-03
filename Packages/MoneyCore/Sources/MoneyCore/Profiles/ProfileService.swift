@@ -65,18 +65,37 @@ public struct ProfileService {
         guard all.count > 1 else { throw ProfileServiceError.lastProfile }
         let fallback = all.first { $0.id != id }?.id
 
-        for tx in try context.fetch(FetchDescriptor<MoneyTransaction>(predicate: #Predicate { $0.profileID == id })) {
-            context.delete(tx)
-        }
-        for asset in try context.fetch(FetchDescriptor<AssetAccount>(predicate: #Predicate { $0.profileID == id })) {
-            context.delete(asset)
-        }
-        for category in try context.fetch(FetchDescriptor<MoneyCategory>(predicate: #Predicate { $0.profileID == id })) {
-            context.delete(category)
-        }
+        try deleteOwnedData(of: id)
         context.delete(target)
         try context.save()
         store.handleDeleted(id, fallback: fallback)
+    }
+
+    /// Menghapus profil tanpa transaksi yang namanya (case-insensitive, trim) sama dengan profil lain.
+    /// Dari sekumpulan profil bernama sama: bila ada yang punya transaksi, semua yang kosong dihapus;
+    /// bila semuanya kosong, yang `createdAt` paling awal dipertahankan. Aset & kategori milik profil yang dihapus ikut dihapus.
+    /// Memanggil `store.handleDeleted` untuk setiap profil terhapus. Mengembalikan jumlah profil yang dihapus.
+    @discardableResult
+    public func removeEmptyDuplicates(store: ProfileStore) throws -> Int {
+        let groups = Dictionary(grouping: try profiles()) {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        var removed: [(id: UUID, fallback: UUID)] = []
+        for group in groups.values where group.count > 1 {
+            let ordered = group.sorted { $0.createdAt != $1.createdAt ? $0.createdAt < $1.createdAt : $0.sortOrder < $1.sortOrder }
+            let withData = try ordered.filter { try hasTransactions($0.id) }
+            let keep = withData.isEmpty ? [ordered[0]] : withData
+            let survivor = keep[0]
+            for profile in ordered where !keep.contains(where: { $0.id == profile.id }) {
+                try deleteOwnedData(of: profile.id)
+                context.delete(profile)
+                removed.append((profile.id, survivor.id))
+            }
+        }
+        guard !removed.isEmpty else { return 0 }
+        try context.save()
+        for item in removed { store.handleDeleted(item.id, fallback: item.fallback) }
+        return removed.count
     }
 
     /// Changing `kind` only relabels the profile; its existing categories stay as they are.
@@ -103,6 +122,25 @@ public struct ProfileService {
     }
 
     // MARK: - Private
+
+    private func hasTransactions(_ id: UUID) throws -> Bool {
+        var descriptor = FetchDescriptor<MoneyTransaction>(predicate: #Predicate { $0.profileID == id })
+        descriptor.fetchLimit = 1
+        return try !context.fetch(descriptor).isEmpty
+    }
+
+    /// Menghapus transaksi, aset, dan kategori milik profil (bukan profilnya); belum menyimpan.
+    private func deleteOwnedData(of id: UUID) throws {
+        for tx in try context.fetch(FetchDescriptor<MoneyTransaction>(predicate: #Predicate { $0.profileID == id })) {
+            context.delete(tx)
+        }
+        for asset in try context.fetch(FetchDescriptor<AssetAccount>(predicate: #Predicate { $0.profileID == id })) {
+            context.delete(asset)
+        }
+        for category in try context.fetch(FetchDescriptor<MoneyCategory>(predicate: #Predicate { $0.profileID == id })) {
+            context.delete(category)
+        }
+    }
 
     private func validatedName(_ name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

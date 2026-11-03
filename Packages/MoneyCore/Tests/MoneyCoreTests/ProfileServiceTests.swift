@@ -254,4 +254,91 @@ struct ProfileServiceTests {
         #expect(try service.profiles().map(\.name) == ["C", "Pribadi", "B"])
         #expect(try service.profiles().map(\.sortOrder) == [0, 1, 2])
     }
+
+    // MARK: - removeEmptyDuplicates
+
+    private func addTransaction(_ ctx: ModelContext, _ profileID: UUID) {
+        ctx.insert(MoneyTransaction(profileID: profileID, type: .expense, amount: 10_000, date: .now))
+    }
+
+    @Test func duplicateEmptyRemovedWhenOtherHasData() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let service = ProfileService(context: ctx)
+        let store = makeStore()
+        let withData = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        addTransaction(ctx, withData.id)
+        let empty = try service.createProfile(name: " pribadi ", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        empty.createdAt = withData.createdAt.addingTimeInterval(-100)
+        try ctx.save()
+        store.switchTo(empty.id)
+
+        let removed = try service.removeEmptyDuplicates(store: store)
+
+        #expect(removed == 1)
+        #expect(try service.profiles().map(\.id) == [withData.id])
+        #expect(store.activeProfileID == withData.id)
+    }
+
+    @Test func profileWithTransactionsNeverRemoved() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let service = ProfileService(context: ctx)
+        let store = makeStore()
+        let a = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        let b = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        addTransaction(ctx, a.id)
+        addTransaction(ctx, b.id)
+        try ctx.save()
+
+        #expect(try service.removeEmptyDuplicates(store: store) == 0)
+        #expect(try service.profiles().count == 2)
+    }
+
+    @Test func allEmptyKeepsOldest() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let service = ProfileService(context: ctx)
+        let store = makeStore()
+        let newer = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        let oldest = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        oldest.createdAt = newer.createdAt.addingTimeInterval(-100)
+        try ctx.save()
+        store.switchTo(newer.id)
+
+        #expect(try service.removeEmptyDuplicates(store: store) == 1)
+        #expect(try service.profiles().map(\.id) == [oldest.id])
+        #expect(store.activeProfileID == oldest.id)
+    }
+
+    @Test func differentNamesUntouched() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let service = ProfileService(context: container.mainContext)
+        let store = makeStore()
+        _ = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        _ = try service.createProfile(name: "Bisnis", emoji: "🏪", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+
+        #expect(try service.removeEmptyDuplicates(store: store) == 0)
+        #expect(try service.profiles().count == 2)
+    }
+
+    @Test func removedProfileDataDeleted() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let ctx = container.mainContext
+        let service = ProfileService(context: ctx)
+        let store = makeStore()
+        let keep = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        addTransaction(ctx, keep.id)
+        let empty = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+        try ctx.save()
+        #expect(try categories(ctx, empty.id).count > 0)
+        #expect(try assets(ctx, empty.id).count == 1)
+
+        try service.removeEmptyDuplicates(store: store)
+
+        #expect(try categories(ctx, empty.id).isEmpty)
+        #expect(try assets(ctx, empty.id).isEmpty)
+        #expect(try categories(ctx, keep.id).count > 0)
+        #expect(try assets(ctx, keep.id).count == 1)
+    }
 }

@@ -10,8 +10,7 @@ enum TransactionListMode: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
-/// What the transaction sheet opens with. Task 12 replaces the placeholder
-/// content with `TransactionFormView(mode:)`.
+/// What the transaction sheet opens with.
 enum TransactionFormRoute: Identifiable {
     case create(defaultDate: Date)
     case edit(MoneyTransaction)
@@ -59,7 +58,10 @@ struct TransactionListView: View {
                 }
             }
             .sheet(item: $formRoute) { route in
-                TransactionFormPlaceholder(route: route)
+                switch route {
+                case .create(let date): TransactionFormView(mode: .create(defaultDate: date))
+                case .edit(let tx): TransactionFormView(mode: .edit(tx))
+                }
             }
         }
     }
@@ -300,32 +302,5 @@ enum MonthFormat {
     /// "Okt 2026".
     static func string(_ date: Date) -> String {
         formatter.string(from: date)
-    }
-}
-
-/// Stand-in for `TransactionFormView` until Task 12.
-private struct TransactionFormPlaceholder: View {
-    let route: TransactionFormRoute
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableView("Form segera hadir", systemImage: "square.and.pencil", description: Text("Form transaksi dibuat di langkah berikutnya."))
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Batal") { dismiss() }
-                    }
-                }
-        }
-        .presentationDetents([.large])
-    }
-
-    private var title: String {
-        switch route {
-        case .create: "Tambah Transaksi"
-        case .edit: "Ubah Transaksi"
-        }
     }
 }

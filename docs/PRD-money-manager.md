@@ -276,7 +276,7 @@ Semua model bisnis punya `profileID: UUID` (scalar, supaya `#Predicate` sederhan
 |---|---|
 | `Profile` | `id`, `name`, `emoji`, `colorHex`, `sortOrder`, `createdAt` |
 | `AssetAccount` | `id`, `profileID`, `name`, `group` (enum), `initialBalance: Decimal`, `includeInTotal`, `isArchived`, `sortOrder` |
-| `Category` | `id`, `profileID`, `name`, `emoji`, `kind` (income/expense), `parent: Category?`, `isHidden`, `isSystem`, `sortOrder` |
+| `MoneyCategory` | `id`, `profileID`, `name`, `emoji`, `kind` (income/expense), `parent: Category?`, `isHidden`, `isSystem`, `sortOrder` |
 | `MoneyTransaction` | `id`, `profileID`, `type` (income/expense/transfer/adjustment), `amount: Decimal` (disimpan sebagai `amountMinor: Int64` dalam sen agar aman untuk CloudKit), `fee: Decimal?`, `date`, `category?`, `asset?`, `toAsset?`, `note`, `detail`, `recurringRuleID?`, `occurrenceKey?`, `importBatchID?`, `createdAt`, `updatedAt` |
 | `Budget` | `id`, `profileID`, `category?` (nil = total), `amount: Decimal`, `effectiveFrom` (bulan) |
 | `RecurringRule` | `id`, `profileID`, template field transaksi, `frequency`, `startDate`, `endDate?`, `installmentCount?`, `lastGeneratedDate?`, `isPaused` |

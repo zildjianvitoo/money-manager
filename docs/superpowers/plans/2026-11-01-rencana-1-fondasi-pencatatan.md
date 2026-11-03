@@ -37,14 +37,14 @@
   - Setiap relasi optional dan punya inverse.
   - Tidak boleh `@Attribute(.unique)`.
 - Setiap model bisnis punya `profileID: UUID`. Setiap query transaksi, aset, dan kategori **wajib** memfilter `profileID`.
-- Model transaksi bernama `MoneyTransaction`, bukan `Transaction`, supaya tidak bentrok dengan `SwiftUI.Transaction`.
+- Model transaksi bernama `MoneyTransaction` (bukan `Transaction`, bentrok dengan `SwiftUI.Transaction`) dan model kategori bernama `MoneyCategory` (bukan `Category`, bentrok dengan runtime ObjC).
 - Enum disimpan sebagai `String` mentah (`typeRaw`, `groupRaw`, `kindRaw`) agar bisa dipakai di `#Predicate`.
 - Format uang: `Rp 1.280.402`. Desimal ditampilkan hanya kalau nilainya bukan bulat (`Rp 1.280,50`). Negatif: `-Rp 6.807.247`. Locale `id_ID`.
 - Copy UI dalam bahasa Indonesia, sesuai istilah PRD (Pendapatan, Pengeluaran, Transfer, Aset, Kategori, Catatan, Deskripsi, Simpan, Simpan & Lanjut).
 - Profil pertama bernama **"Pribadi"**. Profil baru diisi kategori default PRD F6 dan satu aset **"Tunai"** (grup Tunai).
 - Target app memakai `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. Service di `MoneyCore` yang memakai `ModelContext` ditandai `@MainActor`.
 - Perintah test package: `swift test --package-path Packages/MoneyCore`.
-- Perintah build app: `xcodebuild -project money-manager.xcodeproj -scheme money-manager -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.3' build`.
+- Perintah build app: `xcodebuild -project money-manager.xcodeproj -scheme money-manager -destination 'platform=iOS Simulator,id=EF1F29F3-1005-4A09-B5AF-BF6C0F16599B' build` (iPhone 17 Pro, iOS 26.3.1).
 
 ## Review Focus
 
@@ -66,7 +66,7 @@ Packages/MoneyCore/
 │   ├── Formatting/AmountParser.swift        — ekspresi keypad → Decimal
 │   ├── Models/Profile.swift
 │   ├── Models/AssetAccount.swift            — + enum AssetGroup
-│   ├── Models/Category.swift                — + enum CategoryKind
+│   ├── Models/MoneyCategory.swift           — + enum CategoryKind
 │   ├── Models/MoneyTransaction.swift             — + enum TransactionType
 │   ├── Models/MoneySchema.swift             — daftar model + container factory
 │   ├── Profiles/ProfileStore.swift          — profil aktif & sebelumnya (UserDefaults)
@@ -178,7 +178,7 @@ func parserRejectsMalformed(_ input: String) {
 ### Task 2: Model SwiftData
 
 **Files:**
-- Create: `Models/Profile.swift`, `Models/AssetAccount.swift`, `Models/Category.swift`, `Models/MoneyTransaction.swift`, `Models/MoneySchema.swift`
+- Create: `Models/Profile.swift`, `Models/AssetAccount.swift`, `Models/MoneyCategory.swift`, `Models/MoneyTransaction.swift`, `Models/MoneySchema.swift`
 - Test: `Tests/MoneyCoreTests/ModelTests.swift`
 
 **Interfaces:**
@@ -187,9 +187,9 @@ func parserRejectsMalformed(_ input: String) {
   - `enum AssetGroup: String, CaseIterable { case cash, bank, eWallet, creditCard, investment, other }` dengan `displayName` ("Tunai", "Bank", "E-Wallet", "Kartu Kredit", "Investasi", "Lainnya")
   - `@Model AssetAccount`: `id`, `profileID`, `name`, `groupRaw: String = AssetGroup.cash.rawValue`, `initialBalanceMinor: Int64 = 0`, `includeInTotal: Bool = true`, `isArchived: Bool = false`, `sortOrder: Int = 0`, `@Relationship(inverse: \MoneyTransaction.asset) outgoing: [MoneyTransaction]? = []`, `@Relationship(inverse: \MoneyTransaction.toAsset) incoming: [MoneyTransaction]? = []`. Computed `group: AssetGroup`, `initialBalance: Decimal`.
   - `enum CategoryKind: String { case income, expense }`
-  - `@Model Category`: `id`, `profileID`, `name`, `emoji: String = ""`, `kindRaw`, `isHidden: Bool = false`, `sortOrder: Int = 0`, `parent: Category?`, `@Relationship(deleteRule: .cascade, inverse: \Category.parent) children: [Category]? = []`, `@Relationship(inverse: \MoneyTransaction.category) transactions: [MoneyTransaction]? = []`. Computed `kind: CategoryKind`.
+  - `@Model MoneyCategory`: `id`, `profileID`, `name`, `emoji: String = ""`, `kindRaw`, `isHidden: Bool = false`, `sortOrder: Int = 0`, `parent: MoneyCategory?`, `@Relationship(deleteRule: .cascade, inverse: \MoneyCategory.parent) children: [MoneyCategory]? = []`, `@Relationship(inverse: \MoneyTransaction.category) transactions: [MoneyTransaction]? = []`. Computed `kind: CategoryKind`.
   - `enum TransactionType: String { case income, expense, transfer, adjustment }`
-  - `@Model MoneyTransaction`: `id`, `profileID`, `typeRaw`, `amountMinor: Int64 = 0`, `feeMinor: Int64 = 0`, `date: Date = .now`, `category: Category?`, `asset: AssetAccount?`, `toAsset: AssetAccount?`, `note: String = ""`, `detail: String = ""`, `recurringRuleID: UUID?`, `occurrenceKey: String?`, `importBatchID: UUID?`, `createdAt`, `updatedAt`. Computed `type: TransactionType`, `amount: Decimal` (get/set), `fee: Decimal`.
+  - `@Model MoneyTransaction`: `id`, `profileID`, `typeRaw`, `amountMinor: Int64 = 0`, `feeMinor: Int64 = 0`, `date: Date = .now`, `category: MoneyCategory?`, `asset: AssetAccount?`, `toAsset: AssetAccount?`, `note: String = ""`, `detail: String = ""`, `recurringRuleID: UUID?`, `occurrenceKey: String?`, `importBatchID: UUID?`, `createdAt`, `updatedAt`. Computed `type: TransactionType`, `amount: Decimal` (get/set), `fee: Decimal`.
   - `enum MoneySchema { static let models: [any PersistentModel.Type]; @MainActor static func makeContainer(inMemory: Bool) throws -> ModelContainer }`. Dengan `inMemory: false`, container memakai `cloudKitDatabase: .none` untuk sementara; Rencana 3 mengaktifkan `.automatic`.
 
 `category` di `MoneyTransaction` boleh menunjuk ke subkategori. Kategori induk transaksi itu didapat dari `category?.parent ?? category`.
@@ -212,15 +212,15 @@ func parserRejectsMalformed(_ input: String) {
 @MainActor @Test func subcategoryRelationship() throws {
     let ctx = try MoneySchema.makeContainer(inMemory: true).mainContext
     let p = UUID()
-    let food = Category(profileID: p, name: "Makanan", kind: .expense)
-    let lunch = Category(profileID: p, name: "Makan siang", kind: .expense, parent: food)
+    let food = MoneyCategory(profileID: p, name: "Makanan", kind: .expense)
+    let lunch = MoneyCategory(profileID: p, name: "Makan siang", kind: .expense, parent: food)
     ctx.insert(food); ctx.insert(lunch); try ctx.save()
     #expect(food.children?.count == 1)
 }
 ```
 
 - [ ] **Step 2:** Jalankan test. Harus FAIL.
-- [ ] **Step 3:** Implementasikan model sesuai Interfaces, dengan convenience init yang dipakai test: `MoneyTransaction(profileID:type:amount:date:)`, `Category(profileID:name:kind:emoji:parent:)`, `AssetAccount(profileID:name:group:initialBalance:)`, `Profile(name:emoji:colorHex:)`.
+- [ ] **Step 3:** Implementasikan model sesuai Interfaces, dengan convenience init yang dipakai test: `MoneyTransaction(profileID:type:amount:date:)`, `MoneyCategory(profileID:name:kind:emoji:parent:)`, `AssetAccount(profileID:name:group:initialBalance:)`, `Profile(name:emoji:colorHex:)`.
 - [ ] **Step 4:** Jalankan test. Harus PASS.
 - [ ] **Step 5:** Commit: `feat(core): model SwiftData kompatibel CloudKit`.
 
@@ -297,7 +297,7 @@ Isi `DefaultCatalog` sama persis dengan PRD F6, dengan emoji:
   - `bootstrapCreatesPribadiOnce`: `bootstrap` dua kali → tepat satu profil bernama "Pribadi", 12 kategori pengeluaran, 5 pendapatan, 1 aset "Tunai" bergrup `.cash`, dan store aktif == profil itu.
   - `createProfileWithCopiedCategories`: tambah subkategori "Makan siang" di bawah Makanan profil A. `createProfile(…, copyCategoriesFrom: A)` → profil B punya salinan kategori **beserta** subkategorinya, dengan `id` dan `profileID` baru (bukan objek yang sama).
   - `profileIsolation`: buat transaksi, aset, dan kategori di A dan B. Fetch dengan predicate `profileID == A` → tidak ada objek milik B di ketiga tipe.
-  - `deleteProfileRemovesAllData`: hapus B → tidak ada `MoneyTransaction`, `AssetAccount`, atau `Category` dengan `profileID == B`. Kalau B sedang aktif, store pindah ke profil lain.
+  - `deleteProfileRemovesAllData`: hapus B → tidak ada `MoneyTransaction`, `AssetAccount`, atau `MoneyCategory` dengan `profileID == B`. Kalau B sedang aktif, store pindah ke profil lain.
   - `cannotDeleteLastProfile`: memanggil delete dengan hanya satu profil tersisa melempar `.lastProfile`.
   - `emptyNameRejected`: nama `"  "` di `createProfile` maupun `update` melempar `.emptyName`.
   - `moveReordersProfiles`: tiga profil, pindahkan indeks 2 ke 0 → urutan `profiles()` sesuai.
@@ -452,13 +452,13 @@ Transaksi `.adjustment` memakai `amount` bertanda: positif menambah saldo, negat
 public enum CategoryServiceError: Error, Equatable { case emptyName, nestingTooDeep, replacementInvalid }
 @MainActor public struct CategoryService {
     public init(context: ModelContext, profileID: UUID)
-    public func topLevel(kind: CategoryKind, includeHidden: Bool) throws -> [Category] // urut sortOrder
-    public func create(name: String, emoji: String, kind: CategoryKind, parent: Category?) throws -> Category
-    public func rename(_ c: Category, name: String, emoji: String) throws
-    public func move(kind: CategoryKind, parent: Category?, from: IndexSet, to: Int) throws // tulis ulang sortOrder
-    public func setHidden(_ c: Category, _ hidden: Bool) throws
-    public func usageCount(_ c: Category) throws -> Int                // termasuk transaksi subkategori
-    public func delete(_ c: Category, replacement: Category?) throws  // wajib replacement kalau usageCount > 0
+    public func topLevel(kind: CategoryKind, includeHidden: Bool) throws -> [MoneyCategory] // urut sortOrder
+    public func create(name: String, emoji: String, kind: CategoryKind, parent: MoneyCategory?) throws -> MoneyCategory
+    public func rename(_ c: MoneyCategory, name: String, emoji: String) throws
+    public func move(kind: CategoryKind, parent: MoneyCategory?, from: IndexSet, to: Int) throws // tulis ulang sortOrder
+    public func setHidden(_ c: MoneyCategory, _ hidden: Bool) throws
+    public func usageCount(_ c: MoneyCategory) throws -> Int                // termasuk transaksi subkategori
+    public func delete(_ c: MoneyCategory, replacement: MoneyCategory?) throws  // wajib replacement kalau usageCount > 0
 }
 ```
 

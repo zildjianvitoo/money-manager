@@ -108,6 +108,19 @@ public struct ProfileService {
         try context.save()
     }
 
+    /// Profil bernama "Bisnis" (trim, tanpa beda huruf besar) yang masih berjenis Pribadi diubah jadi Bisnis.
+    /// Memperbaiki profil hasil impor awal yang dibuat sebelum ada jenis profil. Kategori tidak disentuh.
+    @discardableResult
+    public func markBusinessProfilesByName() throws -> Int {
+        let fixed = try profiles().filter {
+            $0.kind == .personal
+                && $0.name.trimmingCharacters(in: .whitespaces).localizedCaseInsensitiveCompare(ProfileKind.business.displayName) == .orderedSame
+        }
+        for profile in fixed { profile.kind = .business }
+        if !fixed.isEmpty { try context.save() }
+        return fixed.count
+    }
+
     /// Reorders profiles like `Array.move(fromOffsets:toOffset:)` and rewrites `sortOrder` as 0...n-1.
     public func move(from source: IndexSet, to destination: Int) throws {
         var ordered = try profiles()

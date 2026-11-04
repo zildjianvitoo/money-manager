@@ -66,7 +66,11 @@ enum SeedImporter {
 
         let profiles = ProfileService(context: context)
         let profile = try profiles.profiles().first { $0.name.localizedCaseInsensitiveCompare(seed.profile) == .orderedSame }
-            ?? profiles.createProfile(name: seed.profile, emoji: "🙂", colorHex: "#FF6B5A", copyCategoriesFrom: nil)
+            ?? profiles.createProfile(
+                name: seed.profile, emoji: "🙂", colorHex: "#FF6B5A",
+                kind: seed.profile.localizedCaseInsensitiveCompare(ProfileKind.business.displayName) == .orderedSame ? .business : .personal,
+                copyCategoriesFrom: nil
+            )
         let pid = profile.id
         guard try context.fetchCount(FetchDescriptor<MoneyTransaction>(predicate: #Predicate { $0.profileID == pid })) == 0
         else { throw ImportError.alreadyImported(profile.name) }

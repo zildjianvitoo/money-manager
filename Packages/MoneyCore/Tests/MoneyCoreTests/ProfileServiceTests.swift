@@ -23,6 +23,20 @@ struct ProfileServiceTests {
         try ctx.fetch(FetchDescriptor<MoneyTransaction>(predicate: #Predicate { $0.profileID == id }))
     }
 
+    @Test func markBusinessProfilesByName() throws {
+        let container = try MoneySchema.makeContainer(inMemory: true)
+        let service = ProfileService(context: container.mainContext)
+        let bisnis = try service.createProfile(name: " bisnis ", emoji: "💼", colorHex: "#000000", copyCategoriesFrom: nil)
+        let pribadi = try service.createProfile(name: "Pribadi", emoji: "🙂", colorHex: "#000000", copyCategoriesFrom: nil)
+        let toko = try service.createProfile(name: "Toko", emoji: "🏪", colorHex: "#000000", copyCategoriesFrom: nil)
+
+        #expect(try service.markBusinessProfilesByName() == 1)
+        #expect(bisnis.kind == .business)
+        #expect(pribadi.kind == .personal)
+        #expect(toko.kind == .personal)
+        #expect(try service.markBusinessProfilesByName() == 0)
+    }
+
     @Test func bootstrapCreatesPribadiOnce() throws {
         let container = try MoneySchema.makeContainer(inMemory: true)
         let ctx = container.mainContext

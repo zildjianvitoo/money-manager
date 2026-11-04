@@ -49,6 +49,12 @@ struct money_managerApp: App {
         do {
             let service = ProfileService(context: container.mainContext)
             _ = try service.bootstrap(store: profileStore)
+            // One-time fix for the "Bisnis" profile created by the seed import before profiles had a kind.
+            let kindFixKey = "didMarkBusinessProfilesByName"
+            if !UserDefaults.standard.bool(forKey: kindFixKey) {
+                try service.markBusinessProfilesByName()
+                UserDefaults.standard.set(true, forKey: kindFixKey)
+            }
             try service.removeEmptyDuplicates(store: profileStore)
         } catch {
             assertionFailure("Bootstrap profil gagal: \(error)")

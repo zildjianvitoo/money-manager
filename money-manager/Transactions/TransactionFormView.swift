@@ -29,6 +29,10 @@ struct TransactionFormView: View {
     /// Set when a picker closes the quick flow; the note gets focus once the sheet is gone.
     @State private var focusesNoteAfterPicker = false
     @State private var appliedProfileDefaults = false
+    @State private var isPickingFavorite = false
+    @State private var isNamingFavorite = false
+    @State private var favoriteName = ""
+    @State private var favoriteError: String?
     @FocusState private var textFocus: TextFocus?
 
     private enum Field { case amount, fee }
@@ -160,6 +164,8 @@ struct TransactionFormView: View {
                     if case .edit(let tx) = mode {
                         Section {
                             Button("Duplikat", systemImage: "plus.square.on.square") { duplicate(tx) }
+                            Button("Simpan sebagai favorit", systemImage: "star") { startSavingFavorite() }
+                                .disabled(resolvedDraft == nil)
                             Button("Hapus", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
                         }
                     }
@@ -192,6 +198,22 @@ struct TransactionFormView: View {
             }) { picker in
                 pickerSheet(picker)
             }
+            .sheet(isPresented: $isPickingFavorite) {
+                if let profileID { FavoritePickerSheet(profileID: profileID, onPick: applyFavorite) }
+            }
+            .alert("Simpan sebagai favorit", isPresented: $isNamingFavorite) {
+                TextField("Nama favorit", text: $favoriteName)
+                Button("Simpan dengan nominal") { saveFavorite(includeAmount: true) }
+                Button("Simpan tanpa nominal") { saveFavorite(includeAmount: false) }
+                Button("Batal", role: .cancel) {}
+            } message: {
+                Text("Jenis, kategori, aset, dan catatan disimpan sebagai template.")
+            }
+            .alert("Gagal menyimpan favorit", isPresented: Binding(get: { favoriteError != nil }, set: { if !$0 { favoriteError = nil } })) {
+                Button("OK") { favoriteError = nil }
+            } message: {
+                Text(favoriteError ?? "")
+            }
             .confirmationDialog("Hapus transaksi ini?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                 Button("Hapus", role: .destructive) {
                     if case .edit(let tx) = mode { delete(tx) }
@@ -209,6 +231,11 @@ struct TransactionFormView: View {
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button("Batal") { dismiss() }
+        }
+        if case .create = mode {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Favorit", systemImage: "star") { isPickingFavorite = true }
+            }
         }
         ToolbarItem(placement: .confirmationAction) {
             Button("Simpan", action: save)
@@ -522,6 +549,41 @@ struct TransactionFormView: View {
             dismiss()
         } catch {
             assertionFailure("Simpan transaksi gagal: \(error)")
+        }
+    }
+
+    private func applyFavorite(_ favorite: FavoriteTemplate) {
+        guard let profileID else { return }
+        do {
+            try FavoriteService(context: context, profileID: profileID).apply(favorite, to: &draft)
+            if favorite.amount != nil {
+                amountExpression = Self.expression(for: draft.amount)
+                showsAmountError = false
+            }
+            activeField = favorite.amount == nil ? .amount : nil
+            UISelectionFeedbackGenerator().selectionChanged()
+        } catch {
+            favoriteError = "Favorit tidak bisa dipakai di profil ini."
+        }
+    }
+
+    private func startSavingFavorite() {
+        favoriteName = draft.note.isEmpty ? (draft.categoryID.flatMap(fetchCategory)?.name ?? "") : draft.note
+        isNamingFavorite = true
+    }
+
+    private func saveFavorite(includeAmount: Bool) {
+        guard let profileID else { return }
+        var template = resolvedDraft ?? draft
+        template.date = draft.date
+        do {
+            try FavoriteService(context: context, profileID: profileID)
+                .create(name: favoriteName, from: template, includeAmount: includeAmount)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch FavoriteServiceError.emptyName {
+            favoriteError = "Nama favorit tidak boleh kosong."
+        } catch {
+            favoriteError = error.localizedDescription
         }
     }
 

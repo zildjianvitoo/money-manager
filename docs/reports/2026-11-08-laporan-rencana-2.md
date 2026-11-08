@@ -43,10 +43,10 @@ Import dari backup JSON Money Manager dan CSV, export CSV, riwayat import, dan u
 - Setelah import, pratinjau menyatakan 78 transaksi sudah ada, jadi import ulang file yang sama tidak menambah apa pun (dites juga di unit test).
 - Round-trip export → import ke profil kosong: jumlah transaksi dan total per bulan sama, termasuk catatan dengan koma, kutip, dan baris baru.
 
+- Dicek ulang di simulator memakai skill ios-simulator-skill: undo lewat UI (geser kiri → Batalkan → konfirmasi) mengosongkan profil, import ulang memasukkan 78 transaksi lagi, dan Export membuka share sheet berisi `Duitku-Bisnis-2026-11-08.csv` (6 KB).
+
 ## Belum dicoba / perlu dicek
 
-- **Undo lewat UI** (geser kiri di Riwayat Import) belum dicoba di simulator; logikanya dites di unit test.
-- **Export dan share sheet** belum dibuka di simulator; pembuatan CSV dites di unit test.
 - **File besar (≥ 20.000 baris)** belum diukur. Parsing berjalan di background, tetapi pratinjau dan penyimpanan masih di main thread.
 - **Transfer di format JSON** belum pernah ada di data nyata, jadi dilaporkan sebagai baris gagal.
 - **Import ke profil Pribadi:** PRD menanyakan apakah history perlu dipecah per profil; saat ini satu file masuk ke satu profil.

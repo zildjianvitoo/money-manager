@@ -10,6 +10,8 @@ struct StatisticsView: View {
 
     @State private var period = StatsPeriod.containing(.now, kind: .monthly, calendar: .current)
     @State private var kind: CategoryKind = .expense
+    @State private var isFiltering = false
+    @Environment(FilterState.self) private var filterState
 
     private var activeProfile: Profile? {
         profiles.first { $0.id == store.activeProfileID }
@@ -26,6 +28,16 @@ struct StatisticsView: View {
             }
             .navigationTitle("Statistik")
             .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbar {
+                if activeProfile != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        FilterToolbarButton(activeCount: filterState.filter.activeCount) { isFiltering = true }
+                    }
+                }
+            }
+            .sheet(isPresented: $isFiltering) {
+                if let profile = activeProfile { FilterSheet(profileID: profile.id) }
+            }
         }
     }
 }
@@ -97,14 +109,17 @@ private struct PeriodStatsView: View {
     @Binding var period: StatsPeriod
     @Binding var kind: CategoryKind
 
-    @Query private var transactions: [MoneyTransaction]
+    @Environment(FilterState.self) private var filterState
+    @Query private var rawTransactions: [MoneyTransaction]
     @State private var isRangeSheetPresented = false
+
+    private var transactions: [MoneyTransaction] { filterState.filter.apply(rawTransactions) }
 
     init(profile: Profile, period: Binding<StatsPeriod>, kind: Binding<CategoryKind>) {
         self.profile = profile
         _period = period
         _kind = kind
-        _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: period.wrappedValue.interval))
+        _rawTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: period.wrappedValue.interval))
     }
 
     private var rows: [CategoryShare] {

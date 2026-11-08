@@ -10,9 +10,10 @@ struct CategoryStatsDetailView: View {
     let period: StatsPeriod
 
     /// Transactions inside the period (subcategories + list).
-    @Query private var periodTransactions: [MoneyTransaction]
+    @Query private var rawPeriodTransactions: [MoneyTransaction]
+    @Environment(FilterState.self) private var filterState
     /// Transactions across the 6-month window ending at the period's last month (trend only).
-    @Query private var windowTransactions: [MoneyTransaction]
+    @Query private var rawWindowTransactions: [MoneyTransaction]
     @State private var formRoute: TransactionFormRoute?
     /// Month tapped in the trend chart (its first moment). `nil` follows the statistics period.
     @State private var selectedMonth: Date?
@@ -30,9 +31,9 @@ struct CategoryStatsDetailView: View {
         self.share = share
         self.kind = kind
         self.period = period
-        _periodTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: period.interval))
+        _rawPeriodTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: period.interval))
         let window = Self.trendWindow(endingAt: Self.endMonthStart(of: period))
-        _windowTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: window))
+        _rawWindowTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: window))
     }
 
     /// Start of the month holding the period's last included moment (the interval end is exclusive).
@@ -48,6 +49,10 @@ struct CategoryStatsDetailView: View {
         let end = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
         return DateInterval(start: start, end: end)
     }
+
+    /// The same filter as the statistics list, so totals here match the row that opened this screen.
+    private var periodTransactions: [MoneyTransaction] { filterState.filter.apply(rawPeriodTransactions) }
+    private var windowTransactions: [MoneyTransaction] { filterState.filter.apply(rawWindowTransactions) }
 
     private var trend: [TrendPoint] {
         StatisticsCalculator.trend(

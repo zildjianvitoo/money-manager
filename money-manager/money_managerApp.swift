@@ -15,6 +15,7 @@ struct money_managerApp: App {
     private let container: ModelContainer
     @State private var profileStore = ProfileStore()
     @State private var toastCenter = ToastCenter()
+    @State private var filterState = FilterState()
     @State private var lockController = AppLockController()
     @State private var cleanupTask: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
@@ -32,6 +33,8 @@ struct money_managerApp: App {
             RootView()
                 .environment(profileStore)
                 .environment(toastCenter)
+                .environment(filterState)
+                .onChange(of: profileStore.activeProfileID) { filterState.filter = TransactionFilter() }
                 .environment(lockController)
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     lockController.handle(scenePhase: phase)

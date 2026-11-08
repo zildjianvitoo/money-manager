@@ -31,6 +31,9 @@ struct TransactionListView: View {
     @State private var month = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var mode: TransactionListMode = .daily
     @State private var formRoute: TransactionFormRoute?
+    @State private var isSearching = false
+    @State private var isFiltering = false
+    @Environment(FilterState.self) private var filterState
     /// Day picked in the calendar view; owned here so the + button can use it.
     @State private var selectedDay: Date?
 
@@ -61,6 +64,20 @@ struct TransactionListView: View {
             // Large title in the bar row itself: `.large` adds an empty bar above it, since this screen has no toolbar items.
             .toolbarTitleDisplayMode(.inlineLarge)
             .onChange(of: month) { selectedDay = nil }
+            .toolbar {
+                if activeProfile != nil {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button("Cari", systemImage: "magnifyingglass") { isSearching = true }
+                        FilterToolbarButton(activeCount: filterState.filter.activeCount) { isFiltering = true }
+                    }
+                }
+            }
+            .sheet(isPresented: $isSearching) {
+                if let profile = activeProfile { SearchView(profileID: profile.id) }
+            }
+            .sheet(isPresented: $isFiltering) {
+                if let profile = activeProfile { FilterSheet(profileID: profile.id) }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if activeProfile != nil {
                     addButton
@@ -112,8 +129,11 @@ private struct MonthTransactionsView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(ToastCenter.self) private var toastCenter
-    @Query private var transactions: [MoneyTransaction]
+    @Environment(FilterState.self) private var filterState
+    @Query private var rawTransactions: [MoneyTransaction]
     @State private var pendingDelete: MoneyTransaction?
+
+    private var transactions: [MoneyTransaction] { filterState.filter.apply(rawTransactions) }
 
     init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>, selectedDay: Binding<Date?>, onOpen: @escaping (TransactionFormRoute) -> Void) {
         self.profile = profile
@@ -122,7 +142,7 @@ private struct MonthTransactionsView: View {
         _selectedDay = selectedDay
         self.onOpen = onOpen
         let interval = TransactionQueries.monthInterval(containing: month.wrappedValue, calendar: .current)
-        _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
+        _rawTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
     }
 
     var body: some View {
@@ -217,12 +237,17 @@ private struct MonthTransactionsView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Belum ada transaksi", systemImage: "tray")
+            Label(filterState.filter.isActive ? "Tidak ada yang cocok" : "Belum ada transaksi", systemImage: "tray")
         } description: {
-            Text("di \(MonthFormat.string(month))")
+            Text(filterState.filter.isActive ? "dengan filter di \(MonthFormat.string(month))" : "di \(MonthFormat.string(month))")
         } actions: {
-            Button("Catat transaksi") { onOpen(.create(defaultDate: defaultDate)) }
-                .buttonStyle(.bordered)
+            if filterState.filter.isActive {
+                Button("Hapus filter") { filterState.filter = TransactionFilter() }
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Catat transaksi") { onOpen(.create(defaultDate: defaultDate)) }
+                    .buttonStyle(.bordered)
+            }
         }
     }
 
@@ -354,14 +379,17 @@ private struct YearTransactionsView: View {
     @Binding var month: Date
     @Binding var mode: TransactionListMode
 
-    @Query private var transactions: [MoneyTransaction]
+    @Environment(FilterState.self) private var filterState
+    @Query private var rawTransactions: [MoneyTransaction]
+
+    private var transactions: [MoneyTransaction] { filterState.filter.apply(rawTransactions) }
 
     init(profile: Profile, month: Binding<Date>, mode: Binding<TransactionListMode>) {
         self.profile = profile
         _month = month
         _mode = mode
         let interval = TransactionQueries.yearInterval(containing: month.wrappedValue, calendar: .current)
-        _transactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
+        _rawTransactions = Query(TransactionQueries.descriptor(profileID: profile.id, interval: interval))
     }
 
     var body: some View {

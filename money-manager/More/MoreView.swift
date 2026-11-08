@@ -71,7 +71,6 @@ struct MoreView: View {
                     } label: {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }
-                    comingSoonRow("Transaksi Berulang", systemImage: "repeat")
                 }
                 Section {
                     NavigationLink {
@@ -159,16 +158,4 @@ struct MoreView: View {
         }
     }
     #endif
-
-    /// A disabled row, announced by VoiceOver as dimmed.
-    private func comingSoonRow(_ title: String, systemImage: String) -> some View {
-        Button {} label: {
-            LabeledContent {
-                Text("Segera hadir")
-            } label: {
-                Label(title, systemImage: systemImage)
-            }
-        }
-        .disabled(true)
-    }
 }

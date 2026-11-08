@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-public struct MonthTotal: Equatable, Sendable {
+public struct MonthTotal: Equatable, Hashable, Sendable {
     public let year: Int
     public let month: Int
     public var income: Decimal

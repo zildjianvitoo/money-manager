@@ -153,6 +153,9 @@ public struct ProfileService {
         for category in try context.fetch(FetchDescriptor<MoneyCategory>(predicate: #Predicate { $0.profileID == id })) {
             context.delete(category)
         }
+        for batch in try context.fetch(FetchDescriptor<ImportBatch>(predicate: #Predicate { $0.profileID == id })) {
+            context.delete(batch)
+        }
     }
 
     private func validatedName(_ name: String) throws -> String {

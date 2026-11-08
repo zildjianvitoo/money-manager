@@ -14,8 +14,17 @@ struct CategoryStatsDetailView: View {
     /// Transactions across the 6-month window ending at the period's last month (trend only).
     @Query private var windowTransactions: [MoneyTransaction]
     @State private var formRoute: TransactionFormRoute?
+    /// Month tapped in the trend chart (its first moment). `nil` follows the statistics period.
+    @State private var selectedMonth: Date?
 
     private static let trendMonths = 6
+
+    private static let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "id_ID")
+        formatter.dateFormat = "MMM yyyy"
+        return formatter
+    }()
 
     init(profile: Profile, share: CategoryShare, kind: CategoryKind, period: StatsPeriod) {
         self.share = share
@@ -47,19 +56,34 @@ struct CategoryStatsDetailView: View {
         )
     }
 
+    /// What the lists below show: the tapped month's transactions, otherwise the statistics period's.
+    private var scopedTransactions: [MoneyTransaction] {
+        guard let selectedMonth else { return periodTransactions }
+        let month = TransactionQueries.monthInterval(containing: selectedMonth, calendar: .current)
+        return windowTransactions.filter { $0.date >= month.start && $0.date < month.end }
+    }
+
+    private var scopeLabel: String {
+        selectedMonth.map { Self.monthFormatter.string(from: $0) } ?? StatsPeriodLabel.string(period)
+    }
+
     private var subcategories: [CategoryShare] {
-        StatisticsCalculator.subcategoryBreakdown(periodTransactions, parentID: share.id, kind: kind)
+        StatisticsCalculator.subcategoryBreakdown(scopedTransactions, parentID: share.id, kind: kind)
     }
 
     private var transactions: [MoneyTransaction] {
-        StatisticsCalculator.transactions(periodTransactions, shareID: share.id, kind: kind)
+        StatisticsCalculator.transactions(scopedTransactions, shareID: share.id, kind: kind)
     }
 
     var body: some View {
         let subcategories = subcategories
         List {
             Section("6 bulan terakhir") {
-                TrendChart(points: trend)
+                TrendChart(
+                    points: trend,
+                    selected: selectedMonth ?? trend.last?.id,
+                    onSelect: { selectedMonth = $0 }
+                )
             }
             if subcategories.count > 1 {
                 Section("Subkategori") {
@@ -68,7 +92,11 @@ struct CategoryStatsDetailView: View {
                     }
                 }
             }
-            Section("Transaksi · \(StatsPeriodLabel.string(period))") {
+            Section("Transaksi · \(scopeLabel)") {
+                if transactions.isEmpty {
+                    Text("Belum ada transaksi di \(scopeLabel)")
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(transactions) { tx in
                     Button { formRoute = .edit(tx) } label: {
                         TransactionRow(transaction: tx)
@@ -89,9 +117,12 @@ struct CategoryStatsDetailView: View {
     }
 }
 
-/// Six monthly bars; the last (the period's month) is tinted, the rest secondary.
+/// Six monthly bars; the selected month is tinted, the rest secondary. Tapping anywhere in a month's
+/// column (empty months included) selects it.
 private struct TrendChart: View {
     let points: [TrendPoint]
+    let selected: Date?
+    let onSelect: (Date) -> Void
 
     private static let monthFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -116,15 +147,39 @@ private struct TrendChart: View {
                 x: .value("Bulan", point.id, unit: .month),
                 y: .value("Jumlah", NSDecimalNumber(decimal: point.amount).doubleValue)
             )
-            .foregroundStyle(point.id == points.last?.id ? Color.accentColor : Color.secondary.opacity(0.5))
+            .foregroundStyle(point.id == selected ? Color.accentColor : Color.secondary.opacity(0.5))
             .cornerRadius(4)
-            .accessibilityLabel(Self.monthFormatter.string(from: point.id))
+            .accessibilityLabel("\(Self.monthFormatter.string(from: point.id))\(point.id == selected ? ", dipilih" : "")")
             .accessibilityValue(MoneyFormatter.string(point.amount))
         }
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let plot = proxy.plotFrame else { return }
+                        let x = location.x - geometry[plot].origin.x
+                        guard let date: Date = proxy.value(atX: x),
+                              let month = points.first(where: {
+                                  TransactionQueries.monthInterval(containing: $0.id, calendar: .current).contains(date)
+                              })
+                        else { return }
+                        onSelect(month.id)
+                    }
+            }
+        }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .month)) { _ in
+            AxisMarks(values: .stride(by: .month)) { value in
                 // Fixed id_ID month names, like the rest of the app, whatever the device language.
-                AxisValueLabel(format: .dateTime.month(.abbreviated).locale(Locale(identifier: "id_ID")), centered: true)
+                AxisValueLabel(centered: true) {
+                    if let date = value.as(Date.self) {
+                        let isSelected = date == selected
+                        Text(date.formatted(.dateTime.month(.abbreviated).locale(Locale(identifier: "id_ID"))))
+                            .fontWeight(isSelected ? .bold : .regular)
+                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    }
+                }
             }
         }
         .chartYAxis {

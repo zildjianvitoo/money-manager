@@ -3,7 +3,7 @@ import SwiftData
 
 public enum MoneySchema {
     public static let models: [any PersistentModel.Type] = [
-        Profile.self, AssetAccount.self, MoneyCategory.self, MoneyTransaction.self,
+        Profile.self, AssetAccount.self, MoneyCategory.self, MoneyTransaction.self, ImportBatch.self,
     ]
 
     /// `inMemory: false` memakai `cloudKitDatabase: .automatic`: sinkron iCloud bila entitlement ada, tetap lokal bila tidak.

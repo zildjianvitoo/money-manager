@@ -56,7 +56,21 @@ struct MoreView: View {
                     }
                 }
                 Section {
-                    comingSoonRow("Import / Export", systemImage: "square.and.arrow.down.on.square")
+                    NavigationLink {
+                        ImportFlowView()
+                    } label: {
+                        Label("Import", systemImage: "square.and.arrow.down")
+                    }
+                    NavigationLink {
+                        ImportHistoryView()
+                    } label: {
+                        Label("Riwayat Import", systemImage: "clock.arrow.circlepath")
+                    }
+                    NavigationLink {
+                        ExportView()
+                    } label: {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
                     comingSoonRow("Transaksi Berulang", systemImage: "repeat")
                 }
                 Section {
